@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -213,6 +213,36 @@ export type Database = {
             foreignKeyName: "portfolios_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      pro_upgrade_requests: {
+        Row: {
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pro_upgrade_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pro_upgrade_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "v_account_equity"
             referencedColumns: ["user_id"]
           },
@@ -538,10 +568,7 @@ export type Database = {
         }
         Returns: string
       }
-      refresh_asset_prices: {
-        Args: { [_ in never]: never }
-        Returns: number
-      }
+      refresh_asset_prices: { Args: never; Returns: number }
       use_life_reload: {
         Args: { p_user_id: string }
         Returns: {

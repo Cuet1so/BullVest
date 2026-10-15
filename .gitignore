@@ -22,4 +22,6 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
+test-results/
+playwright-report/
 *.sw?

@@ -1,4 +1,4 @@
-# BullVest — Fase 4: Paper Trading
+# BullVest — Paper Trading y Dashboard
 
 Incluye código frontend y Edge Function necesaria para invocar las RPC financieras **sin exponer `service_role`**. Compatible con SQL V1 (ver `bullvest_supabase_v1.sql`) y AuthContext de Fase 3.
 
@@ -33,3 +33,23 @@ Incluye cotizaciones sintéticas con una variación aleatoria de hasta ±1 % por
 La función SQL actualiza `current_price`, `updated_at` y **`price_updated_at`**, que es el timestamp que validan `OrderForm` y el backend. Marca `price_source = 'simulated'` y `quote_is_delayed = false`. Cada llamada modifica el catálogo compartido para todos los usuarios; no hay un proceso programado cuando nadie utiliza el simulador.
 
 La RPC solo permite `service_role`. La Edge Function valida la sesión antes de usar el cliente administrativo; ninguna clave privada se añade al frontend. Véase la [documentación de autenticación de Edge Functions](https://supabase.com/docs/guides/functions/auth). Si el refresco falla, se muestra un error con opción de reintento y las órdenes permanecen deshabilitadas.
+
+## Fase 5: dashboard y rendimiento
+
+`/dashboard` muestra el patrimonio total, liquidez, valor de las posiciones, rentabilidad no realizada, distribución con Recharts, últimas cinco operaciones y estado Free/Pro. La cartera vacía muestra 100 % de liquidez, incluso con saldo cero. El gráfico se carga por separado para no incluir Recharts en la carga inicial.
+
+`dashboardService.ts` consulta el perfil con posiciones y activos anidados en una sola petición para calcular `fictional_balance + sum(total_quantity * current_price)` con una lectura coherente. Las operaciones se consultan con su activo, orden descendente y límite de cinco. Las consultas usan el usuario autenticado y las políticas RLS existentes. Los índices por usuario y fecha y las vistas con `security_invoker` ya estaban disponibles; no fue necesaria otra RPC financiera.
+
+El dashboard refresca las cotizaciones al entrar, cada 60 segundos mientras está visible y al regresar a la pestaña. Si el refresco falla, muestra los precios disponibles con una advertencia. Las cifras son orientativas y la rentabilidad corresponde solo a las posiciones abiertas; no representa la rentabilidad histórica total de la cuenta.
+
+La migración `20261015135212_dashboard_pro_requests.sql` añade las solicitudes de Pro: una por usuario, visibles solo por su propietario y con inserción limitada a cuentas Free. El CTA registra interés; no cobra ni cambia el rol. Las solicitudes quedan disponibles en `public.pro_upgrade_requests` para revisión administrativa. Las Edge Functions existentes se reutilizan sin cambios.
+
+Verificación:
+
+- `npm run build` y `npm run lint`: tipos de la aplicación y lint.
+- `npm test`: patrimonio, porcentajes, pérdidas, cantidades fraccionarias, saldo cero y precios inválidos.
+- `npm run test:dashboard`: Playwright con Supabase simulado; escritorio, móvil, cartera vacía, cuenta Pro, solicitud persistente y recuperación de errores. En Windows utiliza Edge instalado; en otros sistemas requiere Chromium de Playwright.
+- `npx supabase db query --linked --file supabase/tests/dashboard_rls_audit.sql`: prueba con dos usuarios bajo RLS y reversión de todos los datos de prueba.
+- `npx supabase migration list`: confirmar que el historial local coincide con el remoto.
+
+Los tipos de `src/types/database.types.ts` se regeneran desde el proyecto vinculado mediante `npx supabase gen types typescript --linked --schema public` después de `npx supabase db push`.
