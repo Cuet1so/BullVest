@@ -11,6 +11,9 @@ declare
   sell_result record;
   stale_rejected boolean := false;
 begin
+  -- Preparar un spread conocido; el catálogo original se restaura al terminar.
+  update public.assets set sell_price = round(current_price * 0.999, 8), is_tradable = true
+  where ticker = 'AAPL';
   select * into strict audit_asset from public.assets where ticker = 'AAPL';
 
   -- Usuario efimero, creado y eliminado por ROLLBACK, sin enviar correos.
@@ -49,9 +52,9 @@ begin
 
   select * into strict sell_result
   from public.execute_trade(audit_user_id, audit_asset.id, 'SELL', 1,
-                            audit_asset.current_price, gen_random_uuid());
+                            audit_asset.sell_price, gen_random_uuid());
   if sell_result.position_quantity <> 0
-     or sell_result.resulting_balance <> initial_balance then
+     or sell_result.resulting_balance <> initial_balance - round(audit_asset.current_price, 2) + round(audit_asset.sell_price, 2) then
     raise exception 'SELL result is incorrect';
   end if;
   if (select count(*) from public.transactions where user_id = audit_user_id) <> 2

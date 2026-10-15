@@ -12,6 +12,7 @@
     "test:dashboard": "playwright test tests/browser/dashboard.spec.ts",
     "test:academy": "playwright test tests/browser/academy.spec.ts",
     "test:subscription": "playwright test tests/browser/subscription.spec.ts",
+    "test:trading": "playwright test tests/browser/trading.spec.ts",
     "test:billing": "deno test --allow-env --config supabase/functions/create-checkout-session/deno.json supabase/functions/_shared/billing_test.ts"
   },
   "dependencies": {

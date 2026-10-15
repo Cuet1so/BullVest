@@ -6,12 +6,18 @@ import {
   Heart,
   LoaderCircle,
   RefreshCw,
+  Search,
+  X,
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { OutOfLivesModal } from '../../subscription/components/OutOfLivesModal';
 import { TradingError } from '../services/tradingService';
 import { OrderForm } from '../components/OrderForm';
+import { MarketFilters } from '../components/MarketFilters';
+import { MarketTable } from '../components/MarketTable';
+import { filterMarketAssets, MARKET_FILTERS } from '../utils/market';
+import type { MarketFilter } from '../utils/market';
 import { triggerQuoteRefresh } from '../services/quoteService';
 import {
   executeTrade,
@@ -48,6 +54,8 @@ export function SimulatorPage() {
   const [transactions, setTransactions] = useState<TradeTransaction[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>('popular');
+  const [orderType, setOrderType] = useState<OrderType>('BUY');
   const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -56,6 +64,7 @@ export function SimulatorPage() {
   const readVersion = useRef(0);
   const reloadPending = useRef(false);
   const [outOfLives, setOutOfLives] = useState(false);
+  const orderPanel = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
     if (!userId) return;
@@ -79,7 +88,8 @@ export function SimulatorPage() {
       setSelectedId((previous) =>
         nextAssets.some((asset) => asset.id === previous)
           ? previous
-          : nextAssets[0]?.id ?? null,
+          : nextAssets.find((asset) => asset.is_popular && asset.is_tradable)?.id
+            ?? nextAssets.find((asset) => asset.is_tradable)?.id ?? nextAssets[0]?.id ?? null,
       );
     } catch (error: unknown) {
       if (readVersion.current !== version) return;
@@ -157,13 +167,25 @@ export function SimulatorPage() {
   const marketDataComplete = positionSummaries.every((item) => item.currentValue !== null);
   const investedCost = positionSummaries.reduce((total, item) => total + item.cost, 0);
   const unrealizedPnl = holdingsValue - investedCost;
-  const visibleAssets = assets.filter((asset) =>
-    `${asset.ticker} ${asset.name}`.toLowerCase().includes(search.trim().toLowerCase()),
+  const visibleAssets = useMemo(
+    () => filterMarketAssets(assets, marketFilter, search),
+    [assets, marketFilter, search],
   );
+  const searching = search.trim().length > 0;
   const canReload =
     !!profile &&
     pendingAction === null &&
     !loading;
+
+  function openOrder(asset: Asset, side: OrderType) {
+    if (pendingAction !== null || loading || dataError) return;
+    setSelectedId(asset.id);
+    setOrderType(side);
+    requestAnimationFrame(() => {
+      orderPanel.current?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      orderPanel.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    });
+  }
 
   async function submitTrade(
     orderType: OrderType,
@@ -238,39 +260,38 @@ export function SimulatorPage() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 sm:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Mercado disponible</h2>
+      <section aria-labelledby="market-heading" className="min-w-0 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+          <div><h2 id="market-heading" className="text-lg font-semibold">Mercados</h2><p className="mt-1 text-xs text-zinc-500">Catálogo global · Cuenta demo</p></div>
+          <div className="relative w-full sm:max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-3 size-4 text-zinc-500" aria-hidden="true" />
             <input type="search" value={search} onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar ticker o empresa" aria-label="Buscar activos"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-emerald-400 sm:w-56" />
+              placeholder="Buscar en todos los mercados" aria-label="Buscar activos por ticker o nombre" aria-describedby="market-search-help"
+              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 py-2.5 pl-10 pr-10 text-sm outline-none focus:border-emerald-400" />
+            {search && <button type="button" aria-label="Limpiar búsqueda" onClick={() => setSearch('')} className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:text-white"><X className="size-4" /></button>}
+            <span id="market-search-help" className="sr-only">Busca por nombre o ticker en todo el catálogo, independientemente de la pestaña. Seleccionar una pestaña limpia la búsqueda.</span>
           </div>
-          {loading ? (
-            <p role="status" className="flex items-center gap-2 text-sm text-zinc-400"><LoaderCircle className="size-4 animate-spin" />Cargando cotizaciones…</p>
-          ) : visibleAssets.length === 0 ? (
-            <p className="py-12 text-center text-sm text-zinc-400">No hay activos disponibles. Comprueba el catálogo y la sincronización de precios.</p>
-          ) : (
-            <div className="max-h-105 space-y-2 overflow-y-auto">
-              {visibleAssets.map((asset) => (
-                <button type="button" key={asset.id} onClick={() => setSelectedId(asset.id)}
-                  disabled={pendingAction !== null}
-                  aria-pressed={selectedId === asset.id}
-                  className={`flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition disabled:opacity-50 ${selectedId === asset.id ? 'border-emerald-500/70 bg-emerald-500/10' : 'border-zinc-800 bg-zinc-950/60 hover:border-zinc-600'}`}>
-                  <span className="min-w-0"><span className="block font-semibold">{asset.ticker}</span><span className="block truncate text-xs text-zinc-400">{asset.name}</span></span>
-                  <span className="shrink-0 text-right"><span className="block font-semibold tabular-nums">{money.format(Number(asset.current_price))}</span><span className={`block text-xs ${asset.is_tradable ? 'text-zinc-400' : 'text-amber-300'}`}>{asset.is_tradable ? asset.quote_is_delayed ? 'Precio diferido' : 'Precio indicado' : 'No operable'}</span></span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <OrderForm key={selectedAsset?.id ?? 'none'} asset={selectedAsset}
-          availableBalance={balance}
-          heldQuantity={Number(selectedHolding?.total_quantity ?? 0)}
-          disabled={loading || !!dataError || pendingAction !== null}
-          onExecute={submitTrade} />
-      </div>
+        </div>
+        <MarketFilters value={marketFilter} searching={searching} onChange={(filter) => { setMarketFilter(filter); setSearch(''); }} />
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs text-zinc-500">
+          <p aria-live="polite">{searching ? 'Resultados en todo el mercado' : MARKET_FILTERS.find((filter) => filter.id === marketFilter)?.label} · {visibleAssets.length} de {assets.length} instrumentos</p>
+          <span className="inline-flex items-center gap-2">{loading && <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />}{loading ? 'Actualizando cotizaciones…' : 'Precios de demostración · Capital ficticio'}</span>
+        </div>
+        <div className="grid min-w-0 items-start gap-0 border-t border-zinc-800 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div id="market-results" role="tabpanel" aria-label={searching ? 'Resultados de búsqueda global' : undefined}
+            aria-labelledby={searching ? undefined : `market-tab-${marketFilter}`} aria-busy={loading} className="min-w-0">
+            {loading && assets.length === 0 ? <p role="status" className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-400"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Cargando cotizaciones…</p>
+              : <MarketTable assets={visibleAssets} selectedId={selectedId} filter={searching ? null : marketFilter}
+                  disabled={loading || !!dataError || pendingAction !== null} onOrder={openOrder} />}
+          </div>
+          <div ref={orderPanel} className="min-w-0 scroll-mt-32 border-t border-zinc-800 p-3 xl:border-t-0 xl:border-l">
+            <OrderForm key={`${selectedAsset?.id ?? 'none'}:${orderType}`} asset={selectedAsset}
+              orderType={orderType} onOrderTypeChange={setOrderType} availableBalance={balance}
+              heldQuantity={Number(selectedHolding?.total_quantity ?? 0)}
+              disabled={loading || !!dataError || pendingAction !== null} onExecute={submitTrade} />
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

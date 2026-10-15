@@ -1,4 +1,5 @@
 import { withSupabase } from '@supabase/server';
+import { executionPrice } from './quote.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const QUANTITY_RE = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,8})?$/;
@@ -128,7 +129,7 @@ export default {
     // de ingesta autenticado, NUNCA del payload del navegador.
     const { data: quote, error: quoteError } = await ctx.supabaseAdmin
       .from('assets')
-      .select('id, current_price, price_updated_at, currency, is_tradable')
+      .select('id, current_price, sell_price, price_updated_at, currency, is_tradable')
       .eq('id', parsed.asset_id)
       .maybeSingle();
 
@@ -146,13 +147,16 @@ export default {
       quoteTimestamp - now > 5_000
     ) return fail(409, 'QUOTE_STALE_OR_UNAVAILABLE');
 
+    const price = executionPrice(quote, parsed.order_type);
+    if (price === null) return fail(409, 'QUOTE_STALE_OR_UNAVAILABLE');
+
     // La RPC vuelve a comprobar cotización, saldo y cantidad bajo bloqueos SQL.
     const { data, error } = await ctx.supabaseAdmin.rpc('execute_trade', {
       p_user_id: userId,
       p_asset_id: parsed.asset_id,
       p_type: parsed.order_type,
       p_quantity: parsed.quantity,
-      p_price: quote.current_price,
+      p_price: price,
       p_request_id: parsed.request_id,
     });
 

@@ -89,12 +89,18 @@ async function handleFunctionError(error: Error): Promise<never> {
 }
 
 export async function getAssets(): Promise<Asset[]> {
-  const { data, error } = await supabase
-    .from('assets')
-    .select('*')
-    .order('ticker', { ascending: true });
-  if (error) throw error;
-  return data;
+  const assets: Asset[] = [];
+  const pageSize = 500;
+  // Supabase limita las filas por respuesta. Leer todo el catálogo evita que
+  // filtros y rankings omitan instrumentos cuando el universo crezca.
+  while (true) {
+    const { data, error } = await supabase.from('assets').select('*')
+      .order('ticker', { ascending: true }).order('id', { ascending: true })
+      .range(assets.length, assets.length + pageSize - 1);
+    if (error) throw new Error('No se pudo cargar el catálogo de mercado.', { cause: error });
+    assets.push(...data);
+    if (data.length < pageSize) return assets;
+  }
 }
 
 export async function getPositions(userId: string): Promise<PortfolioPosition[]> {

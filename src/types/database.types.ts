@@ -79,45 +79,78 @@ export type Database = {
       assets: {
         Row: {
           asset_type: string
+          category: string | null
+          change_24h: number | null
+          change_30d: number | null
           created_at: string
           currency: string
           current_price: number
+          has_options: boolean | null
+          high_24h: number | null
           id: string
+          is_meme: boolean | null
+          is_popular: boolean | null
           is_tradable: boolean
+          low_24h: number | null
           name: string
           price_source: string | null
           price_updated_at: string | null
           quote_is_delayed: boolean
+          sell_price: number | null
+          signal_type: string | null
           ticker: string
           updated_at: string
+          volatility_1d: number | null
         }
         Insert: {
           asset_type: string
+          category?: string | null
+          change_24h?: number | null
+          change_30d?: number | null
           created_at?: string
           currency?: string
           current_price: number
+          has_options?: boolean | null
+          high_24h?: number | null
           id?: string
+          is_meme?: boolean | null
+          is_popular?: boolean | null
           is_tradable?: boolean
+          low_24h?: number | null
           name: string
           price_source?: string | null
           price_updated_at?: string | null
           quote_is_delayed?: boolean
+          sell_price?: number | null
+          signal_type?: string | null
           ticker: string
           updated_at?: string
+          volatility_1d?: number | null
         }
         Update: {
           asset_type?: string
+          category?: string | null
+          change_24h?: number | null
+          change_30d?: number | null
           created_at?: string
           currency?: string
           current_price?: number
+          has_options?: boolean | null
+          high_24h?: number | null
           id?: string
+          is_meme?: boolean | null
+          is_popular?: boolean | null
           is_tradable?: boolean
+          low_24h?: number | null
           name?: string
           price_source?: string | null
           price_updated_at?: string | null
           quote_is_delayed?: boolean
+          sell_price?: number | null
+          signal_type?: string | null
           ticker?: string
           updated_at?: string
+          volatility_1d?: number | null
         }
         Relationships: []
       }
