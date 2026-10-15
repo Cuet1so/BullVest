@@ -1,0 +1,13 @@
+{
+  "nodeModulesDir": "none",
+  "imports": {
+    "@supabase/server": "npm:@supabase/server@1.9.2"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "tasks": {
+    "check": "deno check index.ts",
+    "lint": "deno lint index.ts"
+  }
+}
