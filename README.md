@@ -1,5 +1,7 @@
 # BullVest — Paper Trading, Dashboard y Academia
 
+La Fase 7 incorpora Stripe Checkout/Customer Portal, Google OAuth y recargas de 10.000 USD con tres vidas Free. Consulta [configuración, despliegue y pruebas de la Fase 7](docs/phase-7.md). Los CTAs de solicitud manual de Pro descritos en las fases anteriores han sido sustituidos por Checkout. Para desarrollo, usar Node 24 (`nvm use`).
+
 Incluye código frontend y Edge Function necesaria para invocar las RPC financieras **sin exponer `service_role`**. Compatible con SQL V1 (ver `bullvest_supabase_v1.sql`) y AuthContext de Fase 3.
 
 ## Integración

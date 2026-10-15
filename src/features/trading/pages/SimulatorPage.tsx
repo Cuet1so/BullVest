@@ -9,6 +9,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
+import { OutOfLivesModal } from '../../subscription/components/OutOfLivesModal';
+import { TradingError } from '../services/tradingService';
 import { OrderForm } from '../components/OrderForm';
 import { triggerQuoteRefresh } from '../services/quoteService';
 import {
@@ -52,6 +54,8 @@ export function SimulatorPage() {
   const [reloadError, setReloadError] = useState<string | null>(null);
   const [reloadSuccess, setReloadSuccess] = useState<string | null>(null);
   const readVersion = useRef(0);
+  const reloadPending = useRef(false);
+  const [outOfLives, setOutOfLives] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!userId) return;
@@ -158,12 +162,8 @@ export function SimulatorPage() {
   );
   const canReload =
     !!profile &&
-    positions.length === 0 &&
-    balance <= 100 &&
-    (isPro || lives > 0) &&
     pendingAction === null &&
-    !loading &&
-    !dataError;
+    !loading;
 
   async function submitTrade(
     orderType: OrderType,
@@ -190,7 +190,9 @@ export function SimulatorPage() {
   }
 
   async function reloadWallet(): Promise<void> {
-    if (!canReload) return;
+    if (!canReload || reloadPending.current) return;
+    if (!isPro && lives <= 0) { setOutOfLives(true); return; }
+    reloadPending.current = true;
     setPendingAction('reload');
     setReloadError(null);
     setReloadSuccess(null);
@@ -199,14 +201,17 @@ export function SimulatorPage() {
       setReloadSuccess(`Monedero recargado: ${money.format(result.resulting_balance)}.`);
       await Promise.all([refreshProfile(), loadData()]);
     } catch (error: unknown) {
+      if (error instanceof TradingError && error.code === 'NO_FREE_LIVES_REMAINING') setOutOfLives(true);
       setReloadError(error instanceof Error ? error.message : 'No se pudo recargar el saldo.');
     } finally {
+      reloadPending.current = false;
       setPendingAction(null);
     }
   }
 
   return (
     <div className="space-y-8 text-zinc-100">
+      {outOfLives && <OutOfLivesModal onClose={() => setOutOfLives(false)} />}
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">Paper Trading</p>
@@ -294,12 +299,12 @@ export function SimulatorPage() {
           <div>
             <h2 className="flex items-center gap-2 text-lg font-semibold"><Heart className="size-5 text-rose-400" aria-hidden="true" /> Recarga de vidas</h2>
             <p className="mt-2 text-sm text-zinc-400">{isPro ? 'Plan Pro: recargas ilimitadas.' : `Plan Free: ${lives} de 3 recargas restantes.`}</p>
-            <p className="mt-1 text-xs text-zinc-500">Requiere cerrar todas las posiciones y disponer de 100 $ o menos. Recuperas 50.000 $ ficticios.</p>
+            <p className="mt-1 text-xs text-zinc-500">Restablece tu saldo a 10.000 $ ficticios. Cada recarga consume una vida en Free; tus posiciones se conservan.</p>
           </div>
           <button type="button" disabled={!canReload} onClick={() => void reloadWallet()}
             className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
             {pendingAction === 'reload' && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
-            Recargar 50.000 $
+            Recargar 10.000 $
           </button>
         </div>
         {reloadError && <p role="alert" className="mt-4 text-sm text-red-300">{reloadError}</p>}

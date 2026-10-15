@@ -256,6 +256,10 @@ export type Database = {
           id: string
           lives_remaining: number
           role: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          stripe_subscription_status: string | null
+          stripe_sync_started_at: string | null
           updated_at: string
         }
         Insert: {
@@ -265,6 +269,10 @@ export type Database = {
           id: string
           lives_remaining?: number
           role?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          stripe_subscription_status?: string | null
+          stripe_sync_started_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -274,6 +282,10 @@ export type Database = {
           id?: string
           lives_remaining?: number
           role?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          stripe_subscription_status?: string | null
+          stripe_sync_started_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -608,6 +620,17 @@ export type Database = {
       }
     }
     Functions: {
+      apply_stripe_subscription: {
+        Args: {
+          p_customer_id: string
+          p_event_id: string
+          p_role: string
+          p_status: string
+          p_subscription_id: string
+          p_sync_started_at: string
+        }
+        Returns: undefined
+      }
       apply_stripe_subscription_event: {
         Args: {
           p_current_period_end: string
@@ -664,7 +687,24 @@ export type Database = {
         }
         Returns: string
       }
+      refill_portfolio_balance: {
+        Args: never
+        Returns: {
+          reload_id: string
+          remaining_lives: number
+          resulting_balance: number
+        }[]
+      }
       refresh_asset_prices: { Args: never; Returns: number }
+      reserve_stripe_checkout: {
+        Args: {
+          p_generation: string
+          p_origin: string
+          p_price_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       submit_academy_quiz: {
         Args: { p_answers: number[]; p_lesson_id: string }
         Returns: {

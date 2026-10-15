@@ -139,13 +139,12 @@ export async function executeTrade(order: TradeOrder): Promise<TradeReceipt> {
 }
 
 export async function reloadLifeBalance(): Promise<ReloadReceipt> {
-  const { data, error } = await supabase.functions.invoke<ReloadReceipt>('trading', {
-    body: { action: 'use_life_reload' },
-  });
-
-  if (error) return handleFunctionError(error);
-  if (!data || data.action !== 'use_life_reload') {
-    throw new TradingError('INVALID_RESPONSE', 'La respuesta del servidor no es válida.');
+  const { data, error } = await supabase.rpc('refill_portfolio_balance');
+  if (error) {
+    const code = normalizeErrorCode(error.message);
+    throw new TradingError(code, TRADING_ERROR_MESSAGES[code] ?? 'No se pudo recargar el saldo.');
   }
-  return data;
+  const result = data?.[0];
+  if (!result) throw new TradingError('INVALID_RESPONSE', 'La respuesta del servidor no es válida.');
+  return { action: 'use_life_reload', ...result };
 }

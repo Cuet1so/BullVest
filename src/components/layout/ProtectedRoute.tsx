@@ -51,7 +51,7 @@ export function ProtectedRoute() {
 
           <button
             type="button"
-            onClick={() => void refreshProfile()}
+            onClick={() => void refreshProfile().catch(() => { /* Keep the retry view available. */ })}
             className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2 font-semibold text-zinc-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
           >
             <RefreshCw className="size-4" aria-hidden="true" />

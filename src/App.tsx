@@ -12,6 +12,8 @@ import { DashboardPage } from "./features/dashboard/pages/DashboardPage";
 import { SimulatorPage } from "./features/trading/pages/SimulatorPage";
 import { AcademyPage } from "./features/academy/pages/AcademyPage";
 
+import { CheckoutSuccessPage } from "./features/subscription/pages/CheckoutSuccessPage";
+
 function GuestOnlyRoute() {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -60,6 +62,8 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
+
+            <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
 
             <Route path="/dashboard" element={<DashboardPage />} />
 

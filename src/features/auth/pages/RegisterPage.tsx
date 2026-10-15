@@ -4,6 +4,8 @@ import { AuthError } from "@supabase/supabase-js";
 import { Link } from "react-router-dom";
 import { LoaderCircle, TrendingUp } from "lucide-react";
 
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
+
 import { useAuth } from "../context/AuthContext";
 
 function getRegistrationErrorMessage(error: unknown): string {
@@ -32,20 +34,29 @@ function getRegistrationErrorMessage(error: unknown): string {
 }
 
 export function RegisterPage() {
-  const { signUp } = useAuth();
+  const { signUp, signInWithGoogle } = useAuth();
 
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmationPending, setConfirmationPending] = useState(false);
+
+  const handleGoogle = async () => {
+    if (submitting || googleLoading) return;
+    setGoogleLoading(true);
+    setErrorMessage(null);
+    try { await signInWithGoogle(); }
+    catch { setErrorMessage("No se pudo iniciar sesión con Google. Inténtalo de nuevo."); setGoogleLoading(false); }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (submitting) return;
+    if (submitting || googleLoading) return;
 
     const name = displayName.trim();
 
@@ -95,8 +106,10 @@ export function RegisterPage() {
           </h1>
 
           <p className="mt-2 text-sm text-zinc-400">
-            Empieza con 50.000 $ ficticios y tres vidas.
+            Empieza con 10.000 $ ficticios y tres vidas.
           </p>
+
+          {!confirmationPending && <GoogleSignInButton disabled={submitting || googleLoading} loading={googleLoading} onClick={() => void handleGoogle()} />}
 
           {confirmationPending ? (
             <div
@@ -196,7 +209,7 @@ export function RegisterPage() {
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || googleLoading}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
                 {submitting && (

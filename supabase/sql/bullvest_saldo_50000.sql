@@ -1,3 +1,4 @@
+-- HISTÓRICO: sustituido por la Fase 7 (10.000 USD). No ejecutar en el esquema actual.
 -- BullVest: capital ficticio inicial y recargas de 50.000 USD.
 -- Ejecutar UNA VEZ en Supabase SQL Editor (o mediante el flujo de migraciones).
 -- No cambia posiciones, operaciones ni recargas históricas de 10.000 USD.

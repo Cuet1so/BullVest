@@ -18,7 +18,7 @@ async function mockAcademy(page: Page, options: { pro?: boolean; fail?: boolean;
   const progress = new Map<string, { lesson_id: string; score: number; completed: boolean; completed_at: string | null }>();
   const contentRequests: string[] = [];
   const browserErrors: string[] = [];
-  let requested = false;
+
   page.on('pageerror', (error) => browserErrors.push(error.message));
   await page.addInitScript((sessionUser) => {
     localStorage.setItem('sb-zgycwhxwpxbqtivgssml-auth-token', JSON.stringify({
@@ -33,7 +33,7 @@ async function mockAcademy(page: Page, options: { pro?: boolean; fail?: boolean;
     const send = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     const visible = lessons.filter((lesson) => options.pro || lesson.level === 1);
     if (url.pathname === '/auth/v1/user') return send(user);
-    if (url.pathname === '/rest/v1/profiles') return send({ id: userId, display_name: 'Ana', role: options.pro ? 'pro' : 'free', fictional_balance: 50000, lives_remaining: 3 });
+    if (url.pathname === '/rest/v1/profiles') return send({ id: userId, display_name: 'Ana', role: options.pro ? 'pro' : 'free', fictional_balance: 10000, lives_remaining: 3 });
     if (url.pathname === '/rest/v1/academy_levels') {
       if (control.fail) return send({ message: 'Unavailable', code: 'TEST_ERROR' }, 500);
       return send(titles.map((title, index) => ({ id: `level-${index + 1}`, title, level_number: index + 1 })).filter((level) => options.pro || level.level_number === 1));
@@ -76,16 +76,13 @@ async function mockAcademy(page: Page, options: { pro?: boolean; fail?: boolean;
       result.completed_at ??= new Date().toISOString();
       return send([{ ...result, user_id: userId, id: `progress-${result.lesson_id}`, updated_at: new Date().toISOString() }]);
     }
-    if (url.pathname === '/rest/v1/pro_upgrade_requests') {
-      if (request.method() === 'POST') { requested = true; return send(null, 201); }
-      return send(requested ? { user_id: userId, created_at: new Date().toISOString() } : null);
-    }
+    if (url.pathname === '/functions/v1/create-checkout-session') return send({ code: 'BILLING_NOT_CONFIGURED' }, 503);
     throw new Error(`Unexpected Supabase request: ${request.method()} ${url.pathname}`);
   });
   return { control, browserErrors, contentRequests, progress };
 }
 
-test('Free roadmap shows five levels, protects Pro content and records the upgrade request', async ({ page }) => {
+test('Free roadmap shows five levels, protects Pro content and offers Stripe checkout with recoverable errors', async ({ page }) => {
   const { contentRequests, browserErrors } = await mockAcademy(page);
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.goto('/academia');
@@ -96,8 +93,8 @@ test('Free roadmap shows five levels, protects Pro content and records the upgra
   const trigger = page.getByRole('button', { name: 'Desbloquear con Pro' }).first();
   await trigger.click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Solicitar Pro', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Solicitud registrada' })).toBeDisabled();
+  await page.getByRole('dialog').getByRole('button', { name: 'Pasar a Pro', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Los pagos aún no están configurados');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(trigger).toBeFocused();

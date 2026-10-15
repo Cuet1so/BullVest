@@ -19,13 +19,14 @@ interface SignUpResult {
   requiresEmailConfirmation: boolean;
 }
 
-interface AuthContextValue {
+export interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
   profileError: string | null;
 
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
 
   signUp: (
     email: string,
@@ -34,7 +35,7 @@ interface AuthContextValue {
   ) => Promise<SignUpResult>;
 
   signOut: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: () => Promise<Profile | null>;
 }
 
 interface AuthState {
@@ -58,13 +59,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentUserRef = useRef<User | null>(null);
   const profileRequestRef = useRef(0);
 
-  const loadProfile = useCallback(async (userId: string): Promise<void> => {
+  const loadProfile = useCallback(async (userId: string, background = false): Promise<Profile | null> => {
     profileRequestRef.current += 1;
     const requestId = profileRequestRef.current;
 
     setState((previous) => ({
       ...previous,
-      loading: true,
+      loading: background ? previous.loading : true,
       profileError: null,
     }));
 
@@ -83,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileRequestRef.current !== requestId ||
         currentUserRef.current?.id !== userId
       ) {
-        return;
+        return null;
       }
 
       setState((previous) => ({
@@ -92,13 +93,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading: false,
         profileError: null,
       }));
-    } catch {
+      return data;
+    } catch (error) {
       if (
         !isMountedRef.current ||
         profileRequestRef.current !== requestId ||
         currentUserRef.current?.id !== userId
       ) {
-        return;
+        return null;
+      }
+
+      if (background) {
+        setState((previous) => ({ ...previous, loading: false,
+          profileError: previous.profile ? null : 'No se pudo cargar tu perfil. Inténtalo de nuevo.' }));
+        throw error;
       }
 
       setState((previous) => ({
@@ -107,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading: false,
         profileError: "No se pudo cargar tu perfil. Inténtalo de nuevo.",
       }));
+      return null;
     }
   }, []);
 
@@ -181,6 +190,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }, []);
 
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) throw error;
+  }, []);
+
   const signUp = useCallback(
     async (
       email: string,
@@ -217,19 +234,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userId = currentUserRef.current?.id;
 
     if (userId) {
-      await loadProfile(userId);
+      return loadProfile(userId, true);
     }
+    return null;
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!state.user) return;
+    const refresh = () => { void refreshProfile().catch(() => { /* Keep the last confirmed profile. */ }); };
+    const channel = supabase.channel(`profile:${state.user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${state.user.id}` }, refresh)
+      .subscribe();
+    // Also reconcile after returning from the Stripe portal or a sleeping tab.
+    window.addEventListener('focus', refresh);
+    return () => { void supabase.removeChannel(channel); window.removeEventListener('focus', refresh); };
+  }, [state.user, refreshProfile]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       ...state,
       signIn,
+      signInWithGoogle,
       signUp,
       signOut,
       refreshProfile,
     }),
-    [state, signIn, signUp, signOut, refreshProfile],
+    [state, signIn, signInWithGoogle, signUp, signOut, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
