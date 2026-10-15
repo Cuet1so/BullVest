@@ -26,6 +26,7 @@ Incluye cotizaciones sintéticas con una variación aleatoria de hasta ±1 % por
 ## Activar las cotizaciones simuladas
 
 1. Aplica `supabase/migrations/20261014_refresh_asset_prices.sql` en la base de datos existente, mediante SQL Editor o el flujo de migraciones del proyecto. Requiere el esquema V1 y no crea ni siembra `assets`.
+   El catálogo de demostración está en `supabase/migrations/20261015132815_seed_demo_assets.sql`: AAPL, MSFT y SPY, con precios iniciales ficticios de 200, 400 y 500 USD. Esta migración no sobrescribe tickers existentes.
 2. Despliega la Edge Function `refresh-quotes`, incluyendo su `deno.json` y `deno.lock`, con el mismo flujo usado para `trading`. Conserva `verify_jwt = true`.
 3. Abre el simulador con una sesión iniciada. `triggerQuoteRefresh()` invoca la Edge Function antes de leer el catálogo. También se refresca cada 60 segundos mientras la vista está visible, al regresar a la pestaña y con el botón Actualizar. Los temporizadores se limpian al salir y se pausan durante las operaciones.
 
