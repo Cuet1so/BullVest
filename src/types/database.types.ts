@@ -278,6 +278,39 @@ export type Database = {
         }
         Relationships: []
       }
+      quizzes: {
+        Row: {
+          lesson_id: string
+          passing_score: number
+          questions: Json
+        }
+        Insert: {
+          lesson_id: string
+          passing_score?: number
+          questions: Json
+        }
+        Update: {
+          lesson_id?: string
+          passing_score?: number
+          questions?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quizzes_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: true
+            referencedRelation: "academy_lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quizzes_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: true
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stripe_events: {
         Row: {
           event_type: string
@@ -463,6 +496,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "user_academy_progress_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "user_academy_progress_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -480,6 +520,44 @@ export type Database = {
       }
     }
     Views: {
+      lessons: {
+        Row: {
+          content_json: Json | null
+          created_at: string | null
+          id: string | null
+          level_id: string | null
+          order_index: number | null
+          title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          content_json?: Json | null
+          created_at?: string | null
+          id?: string | null
+          level_id?: string | null
+          order_index?: number | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          content_json?: Json | null
+          created_at?: string | null
+          id?: string | null
+          level_id?: string | null
+          order_index?: number | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academy_lessons_level_id_fkey"
+            columns: ["level_id"]
+            isOneToOne: false
+            referencedRelation: "academy_levels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_account_equity: {
         Row: {
           cash_balance: number | null
@@ -544,6 +622,24 @@ export type Database = {
         }
         Returns: boolean
       }
+      complete_academy_lesson: {
+        Args: { p_lesson_id: string }
+        Returns: {
+          completed: boolean
+          completed_at: string | null
+          id: string
+          lesson_id: string
+          score: number
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "user_academy_progress"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       execute_trade: {
         Args: {
           p_asset_id: string
@@ -569,6 +665,15 @@ export type Database = {
         Returns: string
       }
       refresh_asset_prices: { Args: never; Returns: number }
+      submit_academy_quiz: {
+        Args: { p_answers: number[]; p_lesson_id: string }
+        Returns: {
+          correct_count: number
+          passed: boolean
+          question_count: number
+          score: number
+        }[]
+      }
       use_life_reload: {
         Args: { p_user_id: string }
         Returns: {

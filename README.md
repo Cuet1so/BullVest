@@ -1,4 +1,4 @@
-# BullVest — Paper Trading y Dashboard
+# BullVest — Paper Trading, Dashboard y Academia
 
 Incluye código frontend y Edge Function necesaria para invocar las RPC financieras **sin exponer `service_role`**. Compatible con SQL V1 (ver `bullvest_supabase_v1.sql`) y AuthContext de Fase 3.
 
@@ -53,3 +53,36 @@ Verificación:
 - `npx supabase migration list`: confirmar que el historial local coincide con el remoto.
 
 Los tipos de `src/types/database.types.ts` se regeneran desde el proyecto vinculado mediante `npx supabase gen types typescript --linked --schema public` después de `npx supabase db push`.
+
+## Fase 6: academia interactiva
+
+`/academia` ofrece una ruta de cinco niveles, con tres lecciones y tres preguntas por lección: estados financieros (Wild), screening (Greenblatt), análisis cualitativo (Fisher), análisis técnico (Murphy) y gestión del riesgo (Weinstein). Incluye lectura, navegación, tests con reintentos, progreso persistente y estados de carga/error. El contenido es original y usa ejemplos hipotéticos, con enlaces a lecturas complementarias; no reproduce los libros citados.
+
+El Nivel 1 está disponible para cuentas Free. Los niveles 2–5 requieren Pro tanto en la interfaz como en PostgreSQL. Las tarjetas bloqueadas utilizan un índice editorial público incluido en la aplicación; la teoría, las preguntas y los registros de esos niveles no se entregan a cuentas Free. El CTA Pro reutiliza `pro_upgrade_requests`: registra una solicitud, sin cobro ni activación automática del plan.
+
+Las migraciones de la academia son `20261015141442_academy_curriculum_and_progress.sql` y `20261015143626_academy_reference_links.sql`. Conservan los IDs de los niveles y la tabla existente `academy_lessons`, exponiéndola mediante la vista `lessons` con `security_invoker`. Añaden `quizzes`, las claves de corrección en `academy_private.quiz_answers` y las RPC autenticadas de evaluación y finalización. No necesitan nuevas Edge Functions.
+
+- `getAcademyLevels()` obtiene el catálogo y los resúmenes de lecciones bajo RLS; el contenido se descarga al abrir una lección.
+- `getUserProgress()` consulta únicamente el progreso del usuario autenticado.
+- `submit_academy_quiz` corrige las respuestas en el servidor y conserva la mejor nota. El aprobado requiere al menos 70 %; con los tres ítems iniciales, dos aciertos equivalen al 67 % y tres al 100 %.
+- `completeLesson(lessonId, quizScore?)` llama a `complete_academy_lesson`. La nota opcional no se envía como autoridad al servidor: solo se completa si ya existe una evaluación aprobada. Ambas RPC comprueban identidad y plan, fijan `search_path` y no admiten un ID de usuario del cliente.
+- El progreso completado se conserva al repetir un test o al bajar de Pro a Free. La bajada de plan vuelve a bloquear el contenido Pro. Las claves de corrección y las escrituras directas del progreso no están disponibles para el navegador.
+
+Despliegue y verificación de la academia:
+
+```sh
+npx supabase db push
+npx supabase gen types typescript --linked --schema public
+npx supabase migration list
+npx supabase db query --linked --file supabase/tests/academy_rls_audit.sql
+npm run build
+npm run lint
+npm test
+npm run test:academy
+```
+
+Guarda la salida de `gen types` en `src/types/database.types.ts` con UTF-8. La auditoría SQL comprueba el contenido remoto, RLS Free/Pro, aislamiento entre usuarios, protección de respuestas, evaluación, reintentos y bajada de plan; crea usuarios temporales dentro de una transacción que revierte al terminar. Playwright utiliza respuestas de Supabase simuladas para verificar lectura, navegación, tests, recuperación de fallos al guardar, persistencia, paywall, foco del modal y presentación móvil. `npm test` también valida el contrato de los quince contenidos y cuestionarios sembrados.
+
+Verificado el 15 de octubre de 2026 en el proyecto vinculado `zgycwhxwpxbqtivgssml`: ambas migraciones aplicadas mediante `db push`, historial local/remoto coincidente, tipos regenerados y auditoría SQL aprobada. Pasaron las siete pruebas unitarias y las siete de navegador (cuatro de academia y tres de dashboard), además de TypeScript y ESLint. Vite mantiene un aviso de tamaño del bundle principal superior a 500 kB; no impide compilar.
+
+La revisión `db advisors --linked --type security` identifica las dos RPC nuevas como `SECURITY DEFINER` ejecutables por usuarios autenticados. Ese acceso es intencional: las funciones comprueban `auth.uid()`, el plan y la nota, y la auditoría prueba sus rechazos. También permanecen dos avisos preexistentes por permisos de `public.rls_auto_enable()` para `anon` y `authenticated`, ajenos a esta fase. No se presenta esta revisión como una auditoría de seguridad sin avisos.
