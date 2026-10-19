@@ -1,5 +1,7 @@
 import { authenticatedAccount, billingHandler, HttpError, priceIds, stripeClient } from '../_shared/billing.ts';
 
+const APP_ALLOWED_ORIGINS = Deno.env.get('APP_ALLOWED_ORIGINS') || '';
+
 Deno.serve(billingHandler(async (request, origin) => {
   const { admin, user, profile } = await authenticatedAccount(request);
   let payload: { interval?: string };
@@ -59,4 +61,4 @@ Deno.serve(billingHandler(async (request, origin) => {
   });
   if (!session.url || session.status !== 'open') throw new HttpError(409, 'CHECKOUT_ALREADY_COMPLETED');
   return { url: session.url };
-}));
+}, APP_ALLOWED_ORIGINS));

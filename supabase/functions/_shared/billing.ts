@@ -24,16 +24,17 @@ export function priceIds(): string[] {
   return [requiredEnv('STRIPE_PRICE_ID'), Deno.env.get('STRIPE_ANNUAL_PRICE_ID')].filter((id): id is string => !!id);
 }
 
-export function requestOrigin(request: Request): string {
-  const origin = request.headers.get('origin');
-  const allowed = requiredEnv('APP_ALLOWED_ORIGINS').split(',').map((item) => item.trim());
-  if (!origin || !allowed.includes(origin)) throw new HttpError(403, 'ORIGIN_NOT_ALLOWED');
-  const url = new URL(origin);
-  if (url.origin !== origin || (url.protocol !== 'https:' &&
-    !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) {
+export function requestOrigin(
+  request: Request,
+  allowedOrigins = Deno.env.get('APP_ALLOWED_ORIGINS') || '',
+): string {
+  const origin = (request.headers.get('origin') || '').trim().replace(/\/$/, '');
+  const allowed = allowedOrigins.split(',')
+    .map((item) => item.trim().replace(/\/$/, '')).filter(Boolean);
+  if (allowed.length > 0 && !allowed.includes('*') && !allowed.includes(origin)) {
     throw new HttpError(403, 'ORIGIN_NOT_ALLOWED');
   }
-  return origin;
+  return origin || '*';
 }
 
 export async function authenticatedAccount(request: Request) {
@@ -48,16 +49,25 @@ export async function authenticatedAccount(request: Request) {
   return { admin, user, profile };
 }
 
-export function billingHandler(handler: (request: Request, origin: string) => Promise<unknown>) {
+export function billingHandler(
+  handler: (request: Request, origin: string) => Promise<unknown>,
+  allowedOrigins?: string,
+) {
   return async (request: Request): Promise<Response> => {
     let headers: Record<string, string> = { 'Vary': 'Origin', 'Cache-Control': 'no-store' };
     try {
-      const origin = requestOrigin(request);
+      const origin = requestOrigin(request, allowedOrigins);
       headers = { ...headers, 'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage',
         'Access-Control-Allow-Methods': 'POST, OPTIONS' };
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
       if (request.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED');
+      // CORS may be open, but Stripe return URLs still need a concrete HTTP(S) origin.
+      let url: URL;
+      try { url = new URL(origin); } catch { throw new HttpError(403, 'ORIGIN_NOT_ALLOWED'); }
+      if (url.origin !== origin || !['https:', 'http:'].includes(url.protocol)) {
+        throw new HttpError(403, 'ORIGIN_NOT_ALLOWED');
+      }
       return Response.json(await handler(request, origin), { headers });
     } catch (error) {
       // Never return Stripe payloads, credentials or user information to the browser/logs.

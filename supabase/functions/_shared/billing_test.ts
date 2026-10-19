@@ -49,3 +49,61 @@ Deno.test('Stripe signature accepts authentic raw body and rejects modifications
     assert(rejected, 'tampered/stale signature accepted');
   }
 });
+
+Deno.test('billing CORS normalizes lists and origins before preflight and POST', async () => {
+  let calls = 0;
+  const handler = billingHandler((_request, origin) => {
+    calls++;
+    return Promise.resolve({ origin });
+  }, ' https://app.example/ , http://localhost:5173/ , ');
+  for (const origin of [' https://app.example/ ', 'http://localhost:5173/']) {
+    const normalized = origin.trim().replace(/\/$/, '');
+    const preflight = await handler(new Request('https://test', { method: 'OPTIONS', headers: { origin } }));
+    assert(preflight.status === 204, 'normalized preflight rejected');
+    assert(preflight.headers.get('access-control-allow-origin') === normalized, 'wrong CORS origin');
+    assert(preflight.headers.get('access-control-allow-methods') === 'POST, OPTIONS', 'missing methods');
+    assert(preflight.headers.get('access-control-allow-headers')?.includes('authorization'), 'missing authorization header');
+    assert(preflight.headers.get('vary') === 'Origin', 'missing cache variation');
+    const before = calls;
+    const response = await handler(new Request('https://test', { method: 'POST', headers: { origin } }));
+    assert(response.status === 200 && calls === before + 1, 'POST not processed');
+    assert((await response.json()).origin === normalized, 'Stripe received unnormalized origin');
+  }
+  assert(calls === 2, 'preflight invoked billing');
+  for (const method of ['OPTIONS', 'POST']) {
+    const denied = await handler(new Request('https://test', { method, headers: { origin: 'https://app.example.evil' } }));
+    assert(denied.status === 403 && !denied.headers.has('access-control-allow-origin'), 'unlisted origin allowed');
+  }
+});
+
+Deno.test('empty and wildcard CORS allow any origin without bypassing authentication', async () => {
+  const previous = Deno.env.get('APP_ALLOWED_ORIGINS');
+  try {
+    Deno.env.delete('APP_ALLOWED_ORIGINS');
+    for (const allowed of [undefined, '', ' ,  ', '*', 'https://other.example/, * ']) {
+      let calls = 0;
+      const handler = billingHandler(async (request) => {
+        calls++;
+        await authenticatedAccount(request);
+        return {};
+      }, allowed);
+      const headers = { origin: 'http://demo.example/' };
+      const preflight = await handler(new Request('https://test', { method: 'OPTIONS', headers }));
+      assert(preflight.status === 204 && calls === 0, 'preflight invoked authentication');
+      assert(preflight.headers.get('access-control-allow-origin') === 'http://demo.example', 'open CORS rejected origin');
+      const anonymous = await handler(new Request('https://test', { method: 'POST', headers }));
+      assert(anonymous.status === 401, 'authentication bypassed');
+      assert(anonymous.headers.get('access-control-allow-origin') === 'http://demo.example', 'error lost CORS');
+      const noOrigin = await handler(new Request('https://test', { method: 'OPTIONS' }));
+      assert(noOrigin.status === 204 && noOrigin.headers.get('access-control-allow-origin') === '*', 'originless preflight failed');
+      for (const origin of ['', 'null', 'https://demo.example/path', 'javascript:alert(1)']) {
+        const invalid = await handler(new Request('https://test', { method: 'POST', headers: { origin } }));
+        assert(invalid.status === 403, 'invalid Stripe return origin accepted');
+      }
+      assert(Number(calls) === 1, 'invalid origin reached billing');
+    }
+  } finally {
+    if (previous === undefined) Deno.env.delete('APP_ALLOWED_ORIGINS');
+    else Deno.env.set('APP_ALLOWED_ORIGINS', previous);
+  }
+});
