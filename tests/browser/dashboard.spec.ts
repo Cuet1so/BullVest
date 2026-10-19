@@ -31,7 +31,7 @@ async function mockAccount(page: Page, options: { populated?: boolean; pro?: boo
         if (control.fail) return send({ code: 'TEST_ERROR', message: 'Unavailable' }, 500);
         return send({ fictional_balance: options.populated ? 1000 : 10000, positions: options.populated ? [{
           total_quantity: 2, average_buy_price: 15,
-          asset: { id: 'asset-1', ticker: 'AAPL', name: 'Apple', current_price: 20, price_updated_at: new Date().toISOString(), price_source: 'simulated' },
+          asset: { id: 'asset-1', ticker: 'AAPL', name: 'Apple', current_price: 20, sell_price: 18, price_updated_at: new Date().toISOString(), price_source: 'simulated' },
         }] : [] });
       }
       return send({ id: userId, display_name: 'Ana', fictional_balance: options.populated ? 1000 : 10000, role: options.pro ? 'pro' : 'free', lives_remaining: 2 });
@@ -40,7 +40,10 @@ async function mockAccount(page: Page, options: { populated?: boolean; pro?: boo
       expect(url.searchParams.get('limit')).toBe('5');
       expect(url.searchParams.get('user_id')).toBe(`eq.${userId}`);
       expect(url.searchParams.get('select')).toContain('assets!transactions_asset_id_fkey');
-      return send(options.populated ? [{ id: 'transaction-1', executed_at: new Date().toISOString(), transaction_type: 'BUY', quantity: 2, execution_price: 15, total_value: 30, asset: { ticker: 'AAPL', name: 'Apple' } }] : []);
+      return send(options.populated ? [
+        { id: 'transaction-1', executed_at: new Date().toISOString(), transaction_type: 'BUY', quantity: 2, execution_price: 15, total_value: 30, realized_pnl: null, asset: { ticker: 'AAPL', name: 'Apple' } },
+        { id: 'transaction-2', executed_at: new Date().toISOString(), transaction_type: 'SELL', quantity: 2, execution_price: 14, total_value: 28, realized_pnl: -2, asset: { ticker: 'AAPL', name: 'Apple' } },
+      ] : []);
     }
     if (url.pathname === '/functions/v1/create-checkout-session') {
       expect(request.postDataJSON()).toEqual({ interval: 'monthly' });
@@ -73,9 +76,15 @@ test('populated Pro account works on mobile without document overflow', async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   await expect(page.getByRole('region', { name: 'Patrimonio total' })).toContainText('1040,00');
+  await expect(page.getByRole('region', { name: 'Patrimonio total' })).toContainText('1036,00');
+  await expect(page.getByRole('region', { name: 'Patrimonio total' })).toContainText('P/L no realizado de venta (Bid)');
   await expect(page.getByText('Ilimitadas')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pasar a Pro' })).toHaveCount(0);
   await expect(page.getByRole('cell', { name: 'BUY' })).toBeVisible();
+  const sale = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'SELL', exact: true }) });
+  await expect(sale).toContainText('14,00');
+  await expect(sale).toContainText('Bid');
+  await expect(sale).toContainText('-2,00');
   await expect(page.getByRole('region', { name: 'Distribución del patrimonio' })).toContainText('AAPL');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/dashboard-mobile.png', fullPage: true });

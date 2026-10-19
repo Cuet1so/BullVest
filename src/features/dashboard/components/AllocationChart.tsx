@@ -17,7 +17,7 @@ export function AllocationChart({ summary }: { summary: DashboardSummary }) {
   return (
     <section aria-labelledby="allocation-title" className="h-full min-w-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6">
       <h2 id="allocation-title" className="text-lg font-semibold">Distribución del patrimonio</h2>
-      <p className="mt-1 text-xs text-zinc-400">Peso de cada activo y de tu liquidez.</p>
+      <p className="mt-1 text-xs text-zinc-400">Peso de cada activo a precio Ask y de tu liquidez.</p>
       <div className="relative mx-auto mt-4 h-56 w-full max-w-xs" aria-hidden="true">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <PieChart>

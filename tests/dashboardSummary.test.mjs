@@ -5,7 +5,7 @@ import { buildDashboardSummary } from '../src/features/dashboard/utils/dashboard
 const now = Date.parse('2026-10-15T12:00:00Z');
 const holding = {
   assetId: 'asset-1', ticker: 'TEST', name: 'Test', quantity: 2,
-  averageBuyPrice: 15, currentPrice: 20, quotedAt: new Date(now).toISOString(), isSimulated: true,
+  averageBuyPrice: 15, currentPrice: 20, sellPrice: 19, quotedAt: new Date(now).toISOString(), isSimulated: true,
 };
 
 test('an empty portfolio is 100% cash, including an exhausted balance', () => {
@@ -48,4 +48,28 @@ test('invalid prices fail instead of silently understating net worth', () => {
     assert.throws(() => buildDashboardSummary(0, [{ ...holding, currentPrice }], now));
   }
   assert.throws(() => buildDashboardSummary(NaN, [], now));
+});
+
+test('Ask valuation and Bid liquidation account for spread and actual cost', () => {
+  const summary = buildDashboardSummary(60, [{ ...holding, averageBuyPrice: 20 }], now);
+  assert.equal(summary.netWorth, 100);
+  assert.equal(summary.unrealizedPnl, 0);
+  assert.equal(summary.bidNetWorth, 98);
+  assert.equal(summary.bidInvestedValue, 38);
+  assert.equal(summary.bidUnrealizedPnl, -2);
+  assert.equal(summary.bidUnrealizedPnlPercentage, -5);
+  assert.equal(summary.holdings[0].bidValue, 38);
+});
+
+test('missing, invalid and crossed bids never fall back to Ask or zero', () => {
+  for (const sellPrice of [null, undefined, 0, -1, NaN, Infinity, 21]) {
+    const summary = buildDashboardSummary(60, [holding, { ...holding, sellPrice }], now);
+    assert.equal(summary.netWorth, 140);
+    assert.equal(summary.bidNetWorth, null);
+    assert.equal(summary.bidUnrealizedPnl, null);
+  }
+  const cash = buildDashboardSummary(60, [], now);
+  assert.equal(cash.bidNetWorth, 60);
+  assert.equal(cash.bidUnrealizedPnl, 0);
+  assert.equal(cash.bidUnrealizedPnlPercentage, null);
 });

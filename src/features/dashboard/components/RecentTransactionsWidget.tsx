@@ -22,7 +22,7 @@ export function RecentTransactionsWidget({ transactions }: { transactions: Recen
           <table className="w-full min-w-150 text-left text-sm">
             <caption className="sr-only">Últimas cinco operaciones, con precios e importes en dólares estadounidenses</caption>
             <thead className="border-y border-zinc-800 text-xs text-zinc-400"><tr>
-              <th scope="col" className="py-3 pr-3 font-medium">Fecha</th><th scope="col" className="py-3 pr-3 font-medium">Tipo</th><th scope="col" className="py-3 pr-3 font-medium">Activo</th><th scope="col" className="py-3 pl-3 text-right font-medium">Cantidad</th><th scope="col" className="py-3 pl-3 text-right font-medium">Precio</th><th scope="col" className="py-3 pl-3 text-right font-medium">Total</th>
+              <th scope="col" className="py-3 pr-3 font-medium">Fecha</th><th scope="col" className="py-3 pr-3 font-medium">Tipo</th><th scope="col" className="py-3 pr-3 font-medium">Activo</th><th scope="col" className="py-3 pl-3 text-right font-medium">Cantidad</th><th scope="col" className="py-3 pl-3 text-right font-medium">Precio ejecutado</th><th scope="col" className="py-3 pl-3 text-right font-medium">Total</th><th scope="col" className="py-3 pl-3 text-right font-medium">P/L realizado</th>
             </tr></thead>
             <tbody>{transactions.map((transaction) => {
               const buy = transaction.transaction_type === 'BUY';
@@ -31,8 +31,9 @@ export function RecentTransactionsWidget({ transactions }: { transactions: Recen
                 <td className="py-4 pr-3"><span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold ${buy ? 'bg-emerald-400/10 text-emerald-300' : 'bg-amber-400/10 text-amber-300'}`}>{buy ? <ArrowDownLeft className="size-3" aria-hidden="true" /> : <ArrowUpRight className="size-3" aria-hidden="true" />}{transaction.transaction_type}</span></td>
                 <td className="py-4 pr-3"><span className="block font-semibold">{transaction.asset?.ticker ?? 'No disponible'}</span><span className="mt-1 block max-w-36 truncate text-xs text-zinc-500" title={transaction.asset?.name}>{transaction.asset?.name ?? 'Activo no disponible'}</span></td>
                 <td className="py-4 pl-3 text-right tabular-nums">{quantity.format(transaction.quantity)}</td>
-                <td className="py-4 pl-3 text-right tabular-nums">{money.format(transaction.execution_price)}</td>
+                <td className="py-4 pl-3 text-right tabular-nums">{money.format(transaction.execution_price)}<span className="block text-xs text-zinc-500">{buy ? 'Ask' : 'Bid'}</span></td>
                 <td className="py-4 pl-3 text-right font-semibold tabular-nums">{money.format(transaction.total_value)}</td>
+                <td className="py-4 pl-3 text-right tabular-nums">{!buy && transaction.realized_pnl != null ? money.format(transaction.realized_pnl) : '?'}</td>
               </tr>;
             })}</tbody>
           </table>

@@ -11,6 +11,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
+import { withTimeout } from '../../../lib/withTimeout';
+import { bidPositionValue } from '../utils/valuation';
 import { OutOfLivesModal } from '../../subscription/components/OutOfLivesModal';
 import { TradingError } from '../services/tradingService';
 import { OrderForm } from '../components/OrderForm';
@@ -61,27 +63,31 @@ export function SimulatorPage() {
   const [dataError, setDataError] = useState<string | null>(null);
   const [reloadError, setReloadError] = useState<string | null>(null);
   const [reloadSuccess, setReloadSuccess] = useState<string | null>(null);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [needsSync, setNeedsSync] = useState(false);
+  const refreshPending = useRef(false);
   const readVersion = useRef(0);
-  const reloadPending = useRef(false);
+  const mutationPending = useRef(false);
   const [outOfLives, setOutOfLives] = useState(false);
   const orderPanel = useRef<HTMLDivElement>(null);
 
-  const loadData = useCallback(async () => {
-    if (!userId) return;
+  const loadData = useCallback(async (): Promise<boolean> => {
+    if (!userId) return false;
     readVersion.current += 1;
     const version = readVersion.current;
     setLoading(true);
     setDataError(null);
     try {
       // Leer el catalogo solo despues de confirmar el refresco en PostgreSQL.
-      await triggerQuoteRefresh();
-      if (readVersion.current !== version) return;
-      const [nextAssets, nextPositions, nextTransactions] = await Promise.all([
+      await withTimeout(triggerQuoteRefresh());
+      if (readVersion.current !== version) return false;
+      const [nextAssets, nextPositions, nextTransactions] = await withTimeout(Promise.all([
         getAssets(),
         getPositions(userId),
         getTransactions(userId),
-      ]);
-      if (readVersion.current !== version) return;
+      ]));
+      if (readVersion.current !== version) return false;
       setAssets(nextAssets);
       setPositions(nextPositions);
       setTransactions(nextTransactions);
@@ -91,15 +97,42 @@ export function SimulatorPage() {
           : nextAssets.find((asset) => asset.is_popular && asset.is_tradable)?.id
             ?? nextAssets.find((asset) => asset.is_tradable)?.id ?? nextAssets[0]?.id ?? null,
       );
+      return true;
     } catch (error: unknown) {
-      if (readVersion.current !== version) return;
+      if (readVersion.current !== version) return false;
       setDataError(error instanceof Error
         ? error.message
         : 'No se pudieron cargar los datos. Comprueba la conexión y vuelve a intentarlo.');
+      return false;
     } finally {
       if (readVersion.current === version) setLoading(false);
     }
   }, [userId]);
+
+  const refreshView = useCallback(async (confirmed?: 'reload' | 'trade') => {
+    if (refreshPending.current || (!confirmed && mutationPending.current)) return;
+    refreshPending.current = true;
+    setIsRefreshing(true);
+    try {
+      // Wait for both reads, even if one fails. Neither operation repeats a mutation.
+      const [market, account] = await Promise.allSettled([loadData(), withTimeout(refreshProfile())]);
+      if (market.status === 'rejected' || !market.value || account.status === 'rejected' || !account.value) {
+        throw new Error('Incomplete account refresh');
+      }
+      setNeedsSync(false);
+      setRefreshWarning(null);
+    } catch {
+      setNeedsSync(true);
+      setRefreshWarning(confirmed === 'reload'
+        ? 'La recarga está confirmada, pero no se pudieron actualizar todos los datos. No vuelvas a recargar: reintenta solo la actualización.'
+        : confirmed === 'trade'
+          ? 'La operación está confirmada, pero faltan datos actualizados. Reintenta solo la actualización.'
+          : 'No se pudieron actualizar todos los datos. Se conserva la última información disponible. Reintenta la actualización antes de operar.');
+    } finally {
+      refreshPending.current = false;
+      setIsRefreshing(false);
+    }
+  }, [loadData, refreshProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +151,7 @@ export function SimulatorPage() {
   }, [loadData]);
 
   useEffect(() => {
-    if (!userId || loading || pendingAction !== null) return;
+    if (!userId || loading || isRefreshing || needsSync || pendingAction !== null) return;
 
     const refreshVisibleQuotes = () => {
       if (document.visibilityState === 'visible') void loadData();
@@ -130,7 +163,7 @@ export function SimulatorPage() {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', refreshVisibleQuotes);
     };
-  }, [userId, loading, pendingAction, loadData]);
+  }, [userId, loading, isRefreshing, needsSync, pendingAction, loadData]);
 
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedId) ?? null,
@@ -138,7 +171,8 @@ export function SimulatorPage() {
   );
   const selectedHolding = positions.find((position) => position.asset_id === selectedId);
   const balance = Number(profile?.fictional_balance ?? 0);
-  const isPro = profile?.role === 'pro';
+  const unlimitedReloads = profile?.role === 'pro' || profile?.role === 'admin';
+  const isRefilling = pendingAction === 'reload';
   const lives = Number(profile?.lives_remaining ?? 0);
 
   const assetsById = useMemo(
@@ -151,13 +185,15 @@ export function SimulatorPage() {
     const quantity = Number(position.total_quantity);
     const cost = quantity * Number(position.average_buy_price);
     const currentValue = asset ? quantity * Number(asset.current_price) : null;
+    const bidValue = asset ? bidPositionValue(quantity, asset.current_price, asset.sell_price) : null;
     return {
       position,
       asset,
       quantity,
       cost,
       currentValue,
-      pnl: currentValue === null ? null : currentValue - cost,
+      bidValue,
+      pnl: bidValue === null ? null : bidValue - cost,
     };
   }), [positions, assetsById]);
 
@@ -166,7 +202,9 @@ export function SimulatorPage() {
   );
   const marketDataComplete = positionSummaries.every((item) => item.currentValue !== null);
   const investedCost = positionSummaries.reduce((total, item) => total + item.cost, 0);
-  const unrealizedPnl = holdingsValue - investedCost;
+  const bidComplete = positionSummaries.every((item) => item.bidValue !== null);
+  const bidValue = bidComplete ? positionSummaries.reduce((total, item) => total + item.bidValue!, 0) : null;
+  const unrealizedPnl = bidValue === null ? null : bidValue - investedCost;
   const visibleAssets = useMemo(
     () => filterMarketAssets(assets, marketFilter, search),
     [assets, marketFilter, search],
@@ -175,10 +213,10 @@ export function SimulatorPage() {
   const canReload =
     !!profile &&
     pendingAction === null &&
-    !loading;
+    !loading && !isRefreshing && !needsSync;
 
   function openOrder(asset: Asset, side: OrderType) {
-    if (pendingAction !== null || loading || dataError) return;
+    if (pendingAction !== null || loading || isRefreshing || needsSync || dataError) return;
     setSelectedId(asset.id);
     setOrderType(side);
     requestAnimationFrame(() => {
@@ -192,9 +230,10 @@ export function SimulatorPage() {
     quantity: string,
     requestId: string,
   ): Promise<void> {
-    if (!selectedAsset || pendingAction) {
+    if (!selectedAsset || pendingAction || mutationPending.current || refreshPending.current || isRefreshing || needsSync) {
       throw new Error('Selecciona un activo y espera a que termine la operación anterior.');
     }
+    mutationPending.current = true;
     setPendingAction('trade');
     setReloadError(null);
     setReloadSuccess(null);
@@ -205,28 +244,35 @@ export function SimulatorPage() {
         quantity,
         requestId,
       });
-      await Promise.all([refreshProfile(), loadData()]);
+      setNeedsSync(true);
+      await refreshView('trade');
     } finally {
+      mutationPending.current = false;
       setPendingAction(null);
     }
   }
 
   async function reloadWallet(): Promise<void> {
-    if (!canReload || reloadPending.current) return;
-    if (!isPro && lives <= 0) { setOutOfLives(true); return; }
-    reloadPending.current = true;
+    if (!canReload || mutationPending.current || refreshPending.current) return;
+    if (!unlimitedReloads && lives <= 0) { setOutOfLives(true); return; }
+    mutationPending.current = true;
     setPendingAction('reload');
     setReloadError(null);
     setReloadSuccess(null);
     try {
-      const result = await reloadLifeBalance();
-      setReloadSuccess(`Monedero recargado: ${money.format(result.resulting_balance)}.`);
-      await Promise.all([refreshProfile(), loadData()]);
-    } catch (error: unknown) {
-      if (error instanceof TradingError && error.code === 'NO_FREE_LIVES_REMAINING') setOutOfLives(true);
-      setReloadError(error instanceof Error ? error.message : 'No se pudo recargar el saldo.');
+      try {
+        const result = await reloadLifeBalance();
+        setReloadSuccess(`Monedero recargado: ${money.format(result.resulting_balance)}. Vidas restantes: ${result.remaining_lives}.`);
+        setNeedsSync(true);
+      } catch (error: unknown) {
+        if (error instanceof TradingError && error.code === 'NO_FREE_LIVES_REMAINING') setOutOfLives(true);
+        if (!(error instanceof TradingError) || error.code === 'RELOAD_RESULT_UNKNOWN') setNeedsSync(true);
+        setReloadError(error instanceof Error ? error.message : 'No se pudo confirmar la recarga. Actualiza el saldo y las vidas antes de continuar.');
+        return;
+      }
+      await refreshView('reload');
     } finally {
-      reloadPending.current = false;
+      mutationPending.current = false;
       setPendingAction(null);
     }
   }
@@ -240,8 +286,8 @@ export function SimulatorPage() {
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Simulador de inversión</h1>
           <p className="mt-2 text-sm text-zinc-400">Aprende comprando y vendiendo con capital ficticio.</p>
         </div>
-        <button type="button" onClick={() => void Promise.all([loadData(), refreshProfile()])}
-          disabled={loading || pendingAction !== null}
+        <button type="button" onClick={() => void refreshView()}
+          disabled={loading || isRefreshing || pendingAction !== null}
           className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">
           <RefreshCw className="size-4" aria-hidden="true" /> Actualizar
         </button>
@@ -249,16 +295,19 @@ export function SimulatorPage() {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <SummaryCard label="Saldo disponible" value={money.format(balance)} icon={<Wallet className="size-5 text-emerald-400" />} />
-        <SummaryCard label="Patrimonio ficticio" value={marketDataComplete ? money.format(balance + holdingsValue) : 'No disponible'} hint="Efectivo + valor de las posiciones" />
-        <SummaryCard label="P/L latente" value={marketDataComplete ? money.format(unrealizedPnl) : 'No disponible'} hint="Variación respecto al coste de compra" valueClass={unrealizedPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} />
+        <SummaryCard label="Patrimonio ficticio (Ask)" value={marketDataComplete ? money.format(balance + holdingsValue) : 'No disponible'} hint="Efectivo + posiciones a precio de compra" />
+        <SummaryCard label="P/L latente de venta (Bid)" value={unrealizedPnl === null ? 'No disponible' : money.format(unrealizedPnl)} hint={bidValue === null ? 'Falta un precio de venta válido; no se sustituye por Ask.' : `Patrimonio estimado al vender: ${money.format(balance + bidValue)}. Precios sujetos a actualización.`} valueClass={unrealizedPnl === null ? 'text-zinc-400' : unrealizedPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} />
       </div>
 
       {dataError && (
         <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
           {dataError}
-          <button type="button" onClick={() => void loadData()} className="ml-3 underline">Reintentar</button>
+          <button type="button" disabled={loading || isRefreshing || pendingAction !== null} onClick={() => void refreshView()} className="ml-3 underline disabled:opacity-50">Reintentar</button>
         </div>
       )}
+      {refreshWarning && <div role="alert" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-200">
+        {refreshWarning} <button type="button" disabled={loading || isRefreshing || pendingAction !== null} onClick={() => void refreshView()} className="underline disabled:opacity-50">Reintentar actualización</button>
+      </div>}
 
       <section aria-labelledby="market-heading" className="min-w-0 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50">
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
@@ -282,13 +331,13 @@ export function SimulatorPage() {
             aria-labelledby={searching ? undefined : `market-tab-${marketFilter}`} aria-busy={loading} className="min-w-0">
             {loading && assets.length === 0 ? <p role="status" className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-400"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Cargando cotizaciones…</p>
               : <MarketTable assets={visibleAssets} selectedId={selectedId} filter={searching ? null : marketFilter}
-                  disabled={loading || !!dataError || pendingAction !== null} onOrder={openOrder} />}
+                  disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onOrder={openOrder} />}
           </div>
           <div ref={orderPanel} className="min-w-0 scroll-mt-32 border-t border-zinc-800 p-3 xl:border-t-0 xl:border-l">
             <OrderForm key={`${selectedAsset?.id ?? 'none'}:${orderType}`} asset={selectedAsset}
               orderType={orderType} onOrderTypeChange={setOrderType} availableBalance={balance}
               heldQuantity={Number(selectedHolding?.total_quantity ?? 0)}
-              disabled={loading || !!dataError || pendingAction !== null} onExecute={submitTrade} />
+              disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onExecute={submitTrade} />
           </div>
         </div>
       </section>
@@ -301,7 +350,7 @@ export function SimulatorPage() {
         {positions.length === 0 ? (
           <p className="py-8 text-center text-sm text-zinc-400">Aún no tienes posiciones abiertas.</p>
         ) : (
-          <div className="overflow-x-auto"><table className="w-full min-w-140 text-left text-sm"><thead className="border-b border-zinc-800 text-xs text-zinc-400"><tr><th className="py-3">Activo</th><th className="py-3 text-right">Unidades</th><th className="py-3 text-right">Precio medio</th><th className="py-3 text-right">Valor</th><th className="py-3 text-right">P/L latente</th></tr></thead><tbody>
+          <div className="overflow-x-auto"><table className="w-full min-w-140 text-left text-sm"><thead className="border-b border-zinc-800 text-xs text-zinc-400"><tr><th className="py-3">Activo</th><th className="py-3 text-right">Unidades</th><th className="py-3 text-right">Precio medio pagado</th><th className="py-3 text-right">Valor Ask</th><th className="py-3 text-right">Valor Bid</th><th className="py-3 text-right">P/L latente Bid</th></tr></thead><tbody>
             {positionSummaries.map((item) => (
               <tr key={item.position.id} className="border-b border-zinc-800/60 last:border-0">
                 <td className="py-3 font-semibold">{item.asset?.ticker ?? 'Desconocido'}</td>
@@ -319,12 +368,12 @@ export function SimulatorPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-semibold"><Heart className="size-5 text-rose-400" aria-hidden="true" /> Recarga de vidas</h2>
-            <p className="mt-2 text-sm text-zinc-400">{isPro ? 'Plan Pro: recargas ilimitadas.' : `Plan Free: ${lives} de 3 recargas restantes.`}</p>
+            <p className="mt-2 text-sm text-zinc-400">{unlimitedReloads ? `Plan ${profile?.role === 'admin' ? 'Admin' : 'Pro'}: recargas ilimitadas.` : `Plan Free: ${lives} de 3 recargas restantes.`}</p>
             <p className="mt-1 text-xs text-zinc-500">Restablece tu saldo a 10.000 $ ficticios. Cada recarga consume una vida en Free; tus posiciones se conservan.</p>
           </div>
-          <button type="button" disabled={!canReload} onClick={() => void reloadWallet()}
+          <button type="button" disabled={!canReload || isRefilling} aria-busy={isRefilling} onClick={() => void reloadWallet()}
             className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-            {pendingAction === 'reload' && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
+            {isRefilling && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
             Recargar 10.000 $
           </button>
         </div>
@@ -337,14 +386,16 @@ export function SimulatorPage() {
         {transactions.length === 0 ? (
           <p className="py-5 text-sm text-zinc-400">Todavía no has realizado operaciones.</p>
         ) : (
-          <div className="overflow-x-auto"><table className="w-full min-w-135 text-sm"><thead className="border-b border-zinc-800 text-xs text-zinc-400"><tr><th className="py-3 text-left">Fecha</th><th className="py-3 text-left">Activo</th><th className="py-3 text-left">Operación</th><th className="py-3 text-right">Cantidad</th><th className="py-3 text-right">Importe</th></tr></thead><tbody>
+          <div className="overflow-x-auto"><table className="w-full min-w-135 text-sm"><thead className="border-b border-zinc-800 text-xs text-zinc-400"><tr><th className="py-3 text-left">Fecha</th><th className="py-3 text-left">Activo</th><th className="py-3 text-left">Operación</th><th className="py-3 text-right">Cantidad</th><th className="py-3 text-right">Precio ejecutado</th><th className="py-3 text-right">Importe</th><th className="py-3 text-right">P/L realizado</th></tr></thead><tbody>
             {transactions.map((tx) => (
               <tr key={tx.id} className="border-b border-zinc-800/60 last:border-0">
                 <td className="py-3 text-zinc-400">{new Date(tx.executed_at).toLocaleString('es-ES')}</td>
                 <td className="py-3 font-medium">{assetsById.get(tx.asset_id)?.ticker ?? '—'}</td>
                 <td className="py-3">{tx.transaction_type === 'BUY' ? <span className="inline-flex items-center gap-1 text-emerald-300"><ArrowDownLeft className="size-4" />Compra</span> : <span className="inline-flex items-center gap-1 text-amber-300"><ArrowUpRight className="size-4" />Venta</span>}</td>
                 <td className="py-3 text-right tabular-nums">{quantityLabel.format(Number(tx.quantity))}</td>
+                <td className="py-3 text-right tabular-nums">{money.format(Number(tx.execution_price))}<span className="block text-xs text-zinc-500">{tx.transaction_type === 'BUY' ? 'Ask' : 'Bid'}</span></td>
                 <td className="py-3 text-right font-medium tabular-nums">{money.format(Number(tx.total_value))}</td>
+                <td className="py-3 text-right tabular-nums">{tx.transaction_type === 'SELL' && tx.realized_pnl != null ? money.format(tx.realized_pnl) : '?'}</td>
               </tr>
             ))}
           </tbody></table></div>

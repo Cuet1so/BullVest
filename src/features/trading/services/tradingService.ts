@@ -1,5 +1,6 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabase';
+import { withTimeout } from '../../../lib/withTimeout';
 import type { Database } from '../../../types/database.types';
 
 export type Asset = Database['public']['Tables']['assets']['Row'];
@@ -145,12 +146,19 @@ export async function executeTrade(order: TradeOrder): Promise<TradeReceipt> {
 }
 
 export async function reloadLifeBalance(): Promise<ReloadReceipt> {
-  const { data, error } = await supabase.rpc('refill_portfolio_balance');
-  if (error) {
-    const code = normalizeErrorCode(error.message);
-    throw new TradingError(code, TRADING_ERROR_MESSAGES[code] ?? 'No se pudo recargar el saldo.');
+  try {
+    const { data, error } = await withTimeout(supabase.rpc('refill_portfolio_balance').retry(false));
+    if (error) {
+      const code = normalizeErrorCode(error.message);
+      if (TRADING_ERROR_MESSAGES[code]) throw new TradingError(code, TRADING_ERROR_MESSAGES[code]);
+      throw error;
+    }
+    const result = data?.[0];
+    if (!result?.reload_id) throw new Error('Missing reload receipt');
+    return { action: 'use_life_reload', ...result };
+  } catch (error) {
+    if (error instanceof TradingError) throw error;
+    // This RPC has no idempotency key: a lost response must never trigger a replay.
+    throw new TradingError('RELOAD_RESULT_UNKNOWN', 'No se pudo confirmar la recarga. Puede haberse aplicado. Actualiza y comprueba el saldo y las vidas antes de realizar otra recarga.');
   }
-  const result = data?.[0];
-  if (!result) throw new TradingError('INVALID_RESPONSE', 'La respuesta del servidor no es válida.');
-  return { action: 'use_life_reload', ...result };
 }

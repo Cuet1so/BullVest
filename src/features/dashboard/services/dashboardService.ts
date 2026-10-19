@@ -7,7 +7,7 @@ import type { PerformancePeriod } from '../utils/performance';
 
 type Tables = Database['public']['Tables'];
 export type RecentTransaction = Pick<Tables['transactions']['Row'],
-  'id' | 'executed_at' | 'transaction_type' | 'quantity' | 'execution_price' | 'total_value'> & {
+  'id' | 'executed_at' | 'transaction_type' | 'quantity' | 'execution_price' | 'total_value' | 'realized_pnl'> & {
     asset: Pick<Tables['assets']['Row'], 'ticker' | 'name'> | null;
   };
 export type ProUpgradeRequest = Tables['pro_upgrade_requests']['Row'];
@@ -27,7 +27,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     positions:portfolios!portfolios_user_id_fkey (
       total_quantity, average_buy_price,
       asset:assets!portfolios_asset_id_fkey (
-        id, ticker, name, current_price, price_updated_at, price_source
+        id, ticker, name, current_price, sell_price, price_updated_at, price_source
       )
     )
   `).eq('id', userId).single();
@@ -38,6 +38,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       assetId: position.asset.id, ticker: position.asset.ticker, name: position.asset.name,
       quantity: Number(position.total_quantity), averageBuyPrice: Number(position.average_buy_price),
       currentPrice: Number(position.asset.current_price), quotedAt: position.asset.price_updated_at,
+      sellPrice: position.asset.sell_price,
       isSimulated: position.asset.price_source === 'simulated',
     };
   }));
@@ -46,7 +47,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 export async function getRecentTransactions(): Promise<RecentTransaction[]> {
   const userId = await getUserId();
   const { data, error } = await supabase.from('transactions').select(`
-    id, executed_at, transaction_type, quantity, execution_price, total_value,
+    id, executed_at, transaction_type, quantity, execution_price, total_value, realized_pnl,
     asset:assets!transactions_asset_id_fkey (ticker, name)
   `).eq('user_id', userId)
     .order('executed_at', { ascending: false }).order('id', { ascending: false }).limit(5);

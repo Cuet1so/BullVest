@@ -23,7 +23,7 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
     asset('NOBID', { sell_price: null }),
     asset('TINY', { name: 'Tiny crypto', category: 'crypto', current_price: 0.000002, sell_price: 0.0000018 }),
   ];
-  const control = { fail: options.fail ?? false, trades: [] as Record<string, unknown>[], ranges: [] as number[], balance: 1000, quantity: 5, uncertain: false };
+  const control = { fail: options.fail ?? false, trades: [] as Record<string, unknown>[], ranges: [] as number[], balance: 1000, quantity: 5, uncertain: false, failProfileAfterTrade: false };
   const fills = new Map<string, { action: string; transaction_id: string; resulting_balance: number; position_quantity: number }>();
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
@@ -39,7 +39,10 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
     if (url.pathname === '/rest/v1/price_alerts') return send([]);
     if (url.pathname === '/rest/v1/rpc/get_portfolio_performance') return send([]);
     if (url.pathname === '/rest/v1/rpc/get_trading_statistics') return send([{ sell_count: 0, winning_sells: 0, win_rate_pct: null }]);
-    if (url.pathname === '/rest/v1/profiles') return send({ id: userId, display_name: 'Ana', role: 'free', fictional_balance: control.balance, lives_remaining: 3, stripe_customer_id: null });
+    if (url.pathname === '/rest/v1/profiles') {
+      if (control.failProfileAfterTrade && control.trades.length > 0) return send({ message: 'Profile unavailable' }, 400);
+      return send({ id: userId, display_name: 'Ana', role: 'free', fictional_balance: control.balance, lives_remaining: 3, stripe_customer_id: null });
+    }
     if (url.pathname === '/functions/v1/refresh-quotes') {
       if (control.fail) return send({ message: 'Unavailable' }, 500);
       assets.forEach((item) => { item.price_updated_at = new Date().toISOString(); });
@@ -73,6 +76,23 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
   });
   return { assets, control, browserErrors };
 }
+
+test('confirmed trade remains successful when profile refresh fails', async ({ page }) => {
+  const { control, browserErrors } = await market(page);
+  await page.goto('/simulador');
+  const form = page.getByRole('region', { name: 'Formulario de operaciones' });
+  await expect(form.getByRole('button', { name: 'Confirmar compra' })).toBeEnabled();
+  control.failProfileAfterTrade = true;
+  await form.getByRole('button', { name: 'Confirmar compra' }).click();
+  await expect(form.getByText('Compra confirmada.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/La operación está confirmada/)).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Confirmar compra' })).toBeDisabled();
+  control.failProfileAfterTrade = false;
+  await page.getByRole('button', { name: 'Reintentar actualización', exact: true }).click();
+  await expect(form.getByRole('button', { name: 'Confirmar compra' })).toBeEnabled();
+  expect(control.trades).toHaveLength(1);
+  expect(browserErrors).toEqual([]);
+});
 
 test('market tabs, global search, signals and rankings with desktop layout', async ({ page }) => {
   const { browserErrors } = await market(page);

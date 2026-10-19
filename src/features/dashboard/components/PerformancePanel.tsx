@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
+import { withTimeout } from '../../../lib/withTimeout';
 import { getAdvancedMetrics } from '../services/dashboardService';
 import type { AdvancedMetrics } from '../services/dashboardService';
 import { PERFORMANCE_PERIODS } from '../utils/performance';
@@ -16,7 +17,7 @@ export function PerformancePanel({ refreshKey }: { refreshKey: string }) {
   const load = useCallback(async () => {
     const current = ++version.current;
     setLoading(true); setError(null);
-    try { const next = await getAdvancedMetrics(period); if (current === version.current) setData(next); }
+    try { const next = await withTimeout(getAdvancedMetrics(period)); if (current === version.current) setData(next); }
     catch (failure) { if (current === version.current) setError(failure instanceof Error ? failure.message : 'No se pudo cargar el rendimiento.'); }
     finally { if (current === version.current) setLoading(false); }
   }, [period]);
@@ -29,7 +30,7 @@ export function PerformancePanel({ refreshKey }: { refreshKey: string }) {
   return (
     <section aria-labelledby="performance-heading" className="min-w-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div><h2 id="performance-heading" className="text-lg font-semibold">Evolución y rendimiento</h2><p className="mt-1 text-xs text-zinc-400">Patrimonio diario y riesgo de tu cartera ficticia.</p></div>
+        <div><h2 id="performance-heading" className="text-lg font-semibold">Evolución y rendimiento</h2><p className="mt-1 text-xs text-zinc-400">Historial de patrimonio a Ask y riesgo de tu cartera ficticia. No representa el importe de liquidación a Bid.</p></div>
         <div className="flex gap-1 rounded-xl bg-zinc-950 p-1" role="group" aria-label="Periodo de rendimiento">{PERFORMANCE_PERIODS.map((item) => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => { if (period !== item.id) { setPeriod(item.id); setData(null); } }} className={`rounded-lg px-3 py-2 text-xs ${period === item.id ? 'bg-zinc-800 text-emerald-300' : 'text-zinc-400'}`}>{item.label}</button>)}</div>
       </div>
       {error && <p role="alert" className="mt-4 text-sm text-rose-300">{error} <button type="button" onClick={() => void load()} className="underline">Reintentar métricas</button></p>}

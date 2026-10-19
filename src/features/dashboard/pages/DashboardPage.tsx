@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
+import { withTimeout } from '../../../lib/withTimeout';
 import { triggerQuoteRefresh } from '../../trading/services/quoteService';
 import { AccountStatusWidget } from '../components/AccountStatusWidget';
 import { NetWorthWidget } from '../components/NetWorthWidget';
@@ -30,16 +31,18 @@ export function DashboardPage() {
   const inFlight = useRef(false);
 
   const loadDashboard = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || inFlight.current) return;
     const version = ++readVersion.current;
     inFlight.current = true;
     setLoading(true);
     setError(null);
     try {
       // Si falla la ingesta, mostrar la valoración disponible con una advertencia.
-      const quoteWarning = await triggerQuoteRefresh().then(() => false, () => true);
+      let quoteWarning = false;
+      try { await withTimeout(triggerQuoteRefresh()); }
+      catch { quoteWarning = true; }
       if (version !== readVersion.current) return;
-      const [summary, transactions] = await Promise.all([getDashboardSummary(), getRecentTransactions()]);
+      const [summary, transactions] = await withTimeout(Promise.all([getDashboardSummary(), getRecentTransactions()]));
       if (version !== readVersion.current) return;
       setData({ userId, summary, transactions, loadedAt: new Date(), quoteWarning });
     } catch (loadError) {
