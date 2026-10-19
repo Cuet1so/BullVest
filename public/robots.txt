@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bull-vest.vercel.app/sitemap.xml

@@ -2,6 +2,8 @@ import { supabase } from '../../../lib/supabase';
 import type { Database } from '../../../types/database.types';
 import { buildDashboardSummary } from '../utils/dashboardSummary';
 import type { DashboardSummary } from '../utils/dashboardSummary';
+import { calculatePerformance } from '../utils/performance';
+import type { PerformancePeriod } from '../utils/performance';
 
 type Tables = Database['public']['Tables'];
 export type RecentTransaction = Pick<Tables['transactions']['Row'],
@@ -68,3 +70,14 @@ export async function requestProUpgrade(): Promise<void> {
     throw new Error('No se pudo registrar la solicitud. Vuelve a intentarlo.', { cause: error });
   }
 }
+
+export async function getAdvancedMetrics(period: PerformancePeriod = 'all') {
+  const [history, statistics] = await Promise.all([
+    supabase.rpc('get_portfolio_performance', { p_period: period }),
+    supabase.rpc('get_trading_statistics', { p_period: period }),
+  ]);
+  if (history.error || statistics.error) throw new Error('No se pudieron cargar las métricas de rendimiento.');
+  const stats = statistics.data?.[0];
+  return { ...calculatePerformance(history.data ?? []), winRate: stats?.win_rate_pct ?? null, sellCount: stats?.sell_count ?? 0 };
+}
+export type AdvancedMetrics = Awaited<ReturnType<typeof getAdvancedMetrics>>;

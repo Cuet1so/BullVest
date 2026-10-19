@@ -13,7 +13,11 @@
     "test:academy": "playwright test tests/browser/academy.spec.ts",
     "test:subscription": "playwright test tests/browser/subscription.spec.ts",
     "test:trading": "playwright test tests/browser/trading.spec.ts",
-    "test:billing": "deno test --allow-env --config supabase/functions/create-checkout-session/deno.json supabase/functions/_shared/billing_test.ts"
+    "test:billing": "deno test --allow-env --config supabase/functions/create-checkout-session/deno.json supabase/functions/_shared/billing_test.ts",
+    "test:phase8": "playwright test tests/browser/phase8.spec.ts",
+    "test:browser": "playwright test",
+    "test:pwa": "playwright test --config playwright.pwa.config.ts",
+    "assets:pwa": "node scripts/generate-pwa-assets.mjs"
   },
   "dependencies": {
     "@stripe/stripe-js": "^10.1.0",

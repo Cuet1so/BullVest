@@ -5,6 +5,7 @@ import { triggerQuoteRefresh } from '../../trading/services/quoteService';
 import { AccountStatusWidget } from '../components/AccountStatusWidget';
 import { NetWorthWidget } from '../components/NetWorthWidget';
 import { RecentTransactionsWidget } from '../components/RecentTransactionsWidget';
+import { PerformancePanel } from '../components/PerformancePanel';
 import { getDashboardSummary, getRecentTransactions } from '../services/dashboardService';
 import type { RecentTransaction } from '../services/dashboardService';
 import type { DashboardSummary } from '../utils/dashboardSummary';
@@ -84,6 +85,7 @@ export function DashboardPage() {
         <div className="min-w-0">{currentData ? <Suspense fallback={<WidgetSkeleton label="Cargando gráfico" />}><AllocationChart summary={currentData.summary} /></Suspense> : loading ? <WidgetSkeleton label="Cargando distribución" /> : <UnavailableWidget label="Distribución no disponible" />}</div>
         <div className="min-w-0 xl:col-span-2">{currentData ? <RecentTransactionsWidget transactions={currentData.transactions} /> : loading ? <WidgetSkeleton label="Cargando operaciones" /> : <UnavailableWidget label="Operaciones no disponibles" />}</div>
       </div>
+      {currentData && <PerformancePanel refreshKey={currentData.loadedAt.toISOString()} />}
       {currentData && <p className="flex flex-wrap justify-between gap-2 text-xs text-zinc-500"><span>Valoración orientativa del simulador. {currentData.summary.hasSimulatedQuotes ? 'Incluye precios ficticios de demostración.' : 'No se opera con dinero real.'}</span><span>Última consulta: <time dateTime={currentData.loadedAt.toISOString()}>{currentData.loadedAt.toLocaleTimeString('es-ES')}</time></span></p>}
     </div>
   );

@@ -36,6 +36,9 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
     const req = route.request(); const url = new URL(req.url());
     const send = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.pathname === '/auth/v1/user') return send(user);
+    if (url.pathname === '/rest/v1/price_alerts') return send([]);
+    if (url.pathname === '/rest/v1/rpc/get_portfolio_performance') return send([]);
+    if (url.pathname === '/rest/v1/rpc/get_trading_statistics') return send([{ sell_count: 0, winning_sells: 0, win_rate_pct: null }]);
     if (url.pathname === '/rest/v1/profiles') return send({ id: userId, display_name: 'Ana', role: 'free', fictional_balance: control.balance, lives_remaining: 3, stripe_customer_id: null });
     if (url.pathname === '/functions/v1/refresh-quotes') {
       if (control.fail) return send({ message: 'Unavailable' }, 500);

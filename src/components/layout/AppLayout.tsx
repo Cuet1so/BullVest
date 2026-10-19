@@ -7,10 +7,13 @@ import {
   LayoutDashboard,
   LogOut,
   TrendingUp,
+  Trophy,
   Wallet,
 } from "lucide-react";
 
 import { SubscriptionActions } from "../../features/subscription/components/SubscriptionActions";
+import { NotificationCenter } from "../../features/notifications/components/NotificationCenter";
+import { PwaControls } from "./PwaControls";
 
 import { useAuth } from "../../features/auth/context/AuthContext";
 
@@ -30,6 +33,7 @@ const navigation = [
     label: "Academia",
     Icon: GraduationCap,
   },
+  { to: "/ranking", label: "Ranking", Icon: Trophy },
 ] as const;
 
 const formatUSD = new Intl.NumberFormat("en-US", {
@@ -111,6 +115,8 @@ export function AppLayout() {
           </nav>
 
           <div className="order-2 flex flex-wrap items-center gap-2 sm:order-3">
+            <PwaControls />
+            <NotificationCenter key={profile?.id} />
             <SubscriptionActions compact />
             <div className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2">
               <Wallet aria-hidden="true" className="size-5 text-emerald-400" />

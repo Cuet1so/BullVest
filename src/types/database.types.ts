@@ -154,6 +154,45 @@ export type Database = {
         }
         Relationships: []
       }
+      equity_snapshots: {
+        Row: {
+          equity: number
+          observed_at: string
+          quotes_fresh: boolean
+          snapshot_date: string
+          user_id: string
+        }
+        Insert: {
+          equity: number
+          observed_at: string
+          quotes_fresh: boolean
+          snapshot_date: string
+          user_id: string
+        }
+        Update: {
+          equity?: number
+          observed_at?: string
+          quotes_fresh?: boolean
+          snapshot_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equity_snapshots_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equity_snapshots_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       life_reloads_log: {
         Row: {
           balance_after: number
@@ -192,6 +231,85 @@ export type Database = {
           },
           {
             foreignKeyName: "life_reloads_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      performance_baselines: {
+        Row: {
+          equity: number
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          equity: number
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          equity?: number
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "performance_baselines_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_baselines_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      portfolio_cash_flows: {
+        Row: {
+          amount: number
+          id: string
+          occurred_at: string
+          reload_id: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          id?: string
+          occurred_at?: string
+          reload_id: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          id?: string
+          occurred_at?: string
+          reload_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portfolio_cash_flows_reload_id_fkey"
+            columns: ["reload_id"]
+            isOneToOne: true
+            referencedRelation: "life_reloads_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portfolio_cash_flows_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portfolio_cash_flows_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "v_account_equity"
@@ -244,6 +362,67 @@ export type Database = {
           },
           {
             foreignKeyName: "portfolios_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      price_alerts: {
+        Row: {
+          asset_id: string
+          created_at: string
+          direction: string
+          id: string
+          read_at: string | null
+          status: string
+          target_price: number
+          triggered_at: string | null
+          triggered_price: number | null
+          user_id: string
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string
+          direction: string
+          id?: string
+          read_at?: string | null
+          status?: string
+          target_price: number
+          triggered_at?: string | null
+          triggered_price?: number | null
+          user_id: string
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          read_at?: string | null
+          status?: string
+          target_price?: number
+          triggered_at?: string | null
+          triggered_price?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_alerts_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_alerts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_alerts_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "v_account_equity"
@@ -432,6 +611,53 @@ export type Database = {
             foreignKeyName: "subscriptions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      trader_follows: {
+        Row: {
+          created_at: string
+          followed_user_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          followed_user_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          followed_user_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trader_follows_followed_user_id_fkey"
+            columns: ["followed_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trader_follows_followed_user_id_fkey"
+            columns: ["followed_user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "trader_follows_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trader_follows_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "v_account_equity"
             referencedColumns: ["user_id"]
           },
@@ -709,6 +935,54 @@ export type Database = {
           position_quantity: number
           resulting_balance: number
           transaction_id: string
+        }[]
+      }
+      get_global_leaderboard: {
+        Args: {
+          p_following?: boolean
+          p_limit?: number
+          p_offset?: number
+          p_period?: string
+        }
+        Returns: {
+          badges: string[]
+          display_name: string
+          is_following: boolean
+          measured_since: string
+          rank: number
+          roi_pct: number
+          sell_count: number
+          total_count: number
+          total_equity: number
+          user_id: string
+          win_rate_pct: number
+        }[]
+      }
+      get_my_achievements: {
+        Args: never
+        Returns: {
+          badges: string[]
+          completed_lessons: number
+          trade_count: number
+          winning_sells: number
+        }[]
+      }
+      get_portfolio_performance: {
+        Args: { p_period?: string }
+        Returns: {
+          equity: number
+          is_daily_close: boolean
+          observed_at: string
+          quotes_fresh: boolean
+          return_pct: number
+        }[]
+      }
+      get_trading_statistics: {
+        Args: { p_period?: string }
+        Returns: {
+          sell_count: number
+          win_rate_pct: number
+          winning_sells: number
         }[]
       }
       record_lesson_result: {

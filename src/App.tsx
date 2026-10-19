@@ -11,6 +11,7 @@ import { RegisterPage } from "./features/auth/pages/RegisterPage";
 import { DashboardPage } from "./features/dashboard/pages/DashboardPage";
 import { SimulatorPage } from "./features/trading/pages/SimulatorPage";
 import { AcademyPage } from "./features/academy/pages/AcademyPage";
+import { RankingPage } from "./features/ranking/pages/RankingPage";
 
 import { CheckoutSuccessPage } from "./features/subscription/pages/CheckoutSuccessPage";
 
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/simulador" element={<SimulatorPage />} />
 
             <Route path="/academia" element={<AcademyPage />} />
+            <Route path="/ranking" element={<RankingPage />} />
           </Route>
         </Route>
 

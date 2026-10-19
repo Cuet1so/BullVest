@@ -111,3 +111,52 @@ Despliegue ejecutado: `npx supabase db push` y `npx supabase functions deploy tr
 - `npm run build`, `npm run lint` y `deno check --config supabase/functions/trading/deno.json supabase/functions/trading/index.ts`: comprobación del frontend y la Edge Function.
 
 Verificación final del cambio: 11 pruebas unitarias y 18 de navegador aprobadas, build/ESLint/Deno correctos y ambas auditorías SQL de cotizaciones aprobadas tras el despliegue. El historial de migraciones local/remoto coincide. Vite conserva el aviso de bundle superior a 500 kB. Los asesores de Supabase no señalan `execute_trade` ni `refresh_asset_prices`; sí mantienen avisos sobre funciones ajenas al cambio (`rls_auto_enable`, academia y recargas) y la protección de contraseñas filtradas desactivada.
+
+## Fase 8: ranking, social trading, rendimiento y PWA
+
+`/ranking` incorpora paginación de 20 inversores, periodos de 7 días, 30 días e histórico, medallas para el Top 3 y seguimiento persistente. El filtro de seguidos conserva la posición global. Seguir a un inversor permite consultar sus resultados públicos; no copia órdenes. Las cinco insignias se calculan desde las operaciones y el progreso aprobado: primera operación, diez operaciones, primera venta ganadora, primera lección y las quince lecciones completadas.
+
+El Dashboard incluye Win Rate, Max Drawdown, Ratio Sharpe y una curva diaria de patrimonio con Recharts. Las métricas proceden de observaciones reales del simulador, con estas convenciones:
+
+- Patrimonio = saldo líquido + unidades de cada posición × `assets.current_price`, igual que la valoración del Dashboard. No representa el importe neto de liquidación al bid.
+- El ROI del ranking usa Modified Dietz: `(valor final − valor inicial − flujos netos) / (valor inicial + flujos ponderados por tiempo)`. Las recargas, incluidas las que reducen el saldo, se registran como flujos externos. Se toma la primera observación disponible dentro del periodo y se muestra su fecha. Referencia metodológica: [GIPS Standards Handbook](https://www.gipsstandards.org/wp-content/uploads/2021/04/gips-standards-handbook-firms.pdf).
+- Win Rate = ventas con P/L realizado positivo / ventas con P/L conocido en el periodo. Cada ejecución SELL, incluida una venta parcial, cuenta una vez. Sin ventas se muestra `—`.
+- Drawdown = máxima caída del índice de rendimientos encadenados, ajustados por flujos con Modified Dietz. Usa los puntos disponibles y la valoración actual; no mide mínimos intradiarios que no se hayan conservado. Un intervalo sin denominador válido deja el drawdown en `—`.
+- Sharpe = media / desviación estándar muestral de retornos diarios × √365, con tasa libre de riesgo asumida 0. Solo usa cierres de días UTC consecutivos con cotizaciones vigentes en ambos extremos; excluye el día en curso, intervalos incompletos y precios caducados. Requiere al menos dos retornos y varianza distinta de cero; en otro caso muestra `—`.
+- La curva muestra patrimonio bruto, incluidas recargas. No se inventa historia previa al despliegue. Hay un punto inicial y una última observación por día UTC, capturada tras operaciones, recargas y cambios de precios, además de un cron cada cinco minutos. El cron registra los últimos precios disponibles; no crea un proveedor de cotizaciones.
+
+La campana de navegación permite crear alertas por encima o por debajo de un precio de compra, consultar las activadas, marcarlas como leídas y eliminarlas. PostgreSQL evalúa la condición al crear la alerta y al actualizar precios vigentes (120 segundos), aunque su propietario haya cerrado la aplicación. Cada alerta se activa una sola vez. Hay un máximo de 100 alertas guardadas por usuario; la interfaz consulta novedades cada 30 segundos mientras está visible. Este centro es interno a BullVest y no envía notificaciones push ni correos externos.
+
+### Esquema, permisos y despliegue de la fase 8
+
+Migraciones aplicadas:
+
+- `supabase/migrations/20261015185328_phase8_ranking_analytics_alerts.sql`: tablas `performance_baselines`, `equity_snapshots`, `portfolio_cash_flows`, `trader_follows`, `price_alerts`, RPC autenticadas, triggers, RLS y cron.
+- `supabase/migrations/20261015191238_phase8_alert_ownership_guard.sql`: rechazo de suplantación antes de consultar el cupo de alertas y restricción de precio activado obligatorio.
+
+Las tablas privadas solo admiten lectura del propietario. Las valoraciones y flujos no admiten escrituras del navegador. Las alertas permiten insertar campos de la condición, borrar las propias y actualizar únicamente `read_at` cuando se han activado. El esquema `analytics_private` no está expuesto a clientes. Las RPC fijan `search_path`, verifican `auth.uid()` y limitan los resultados; el ranking publica un nombre, identificador, métricas e insignias, sin exponer emails, vidas, datos de facturación, posiciones ni transacciones ajenas.
+
+Se ejecutaron `npx supabase db push`, `npx supabase gen types typescript --linked --schema public`, `npx supabase migration list` y `npx supabase db advisors --linked --type security` en `zgycwhxwpxbqtivgssml`. Los diez registros del historial local y remoto coinciden y los tipos de `src/types/database.types.ts` se regeneraron desde la nube. No se crearon ni modificaron Edge Functions en esta fase; la evaluación de alertas y captura de patrimonio se realizan en PostgreSQL.
+
+Auditoría real del 15 de octubre de 2026: dos perfiles con baseline y snapshot; cron activo con ejecuciones `succeeded` a las 19:10 y 19:15 UTC. `supabase/tests/phase8_audit.sql` verifica ROI sin ganancia ficticia por recarga, ventanas temporales, paginación, win rate, insignias, seguimiento, alertas, aislamiento RLS y rechazo anónimo. Sus usuarios y modificaciones se revierten dentro de una transacción. Los asesores señalan las cuatro RPC de lectura `SECURITY DEFINER` autenticadas como avisos esperados por diseño; su alcance está probado. Permanecen los avisos anteriores sobre `rls_auto_enable`, academia, recargas y protección de contraseñas filtradas desactivada.
+
+### Instalación y modo sin conexión
+
+La PWA utiliza `public/manifest.webmanifest`, iconos PNG y `public/sw.js`. El service worker solo se registra en producción. Al quedarse sin conexión, una navegación muestra `offline.html`; la aplicación abierta indica que los datos pueden estar desactualizados. La caché contiene exclusivamente esa pantalla y dos iconos públicos. Los datos de cuenta, peticiones de Supabase y órdenes no se almacenan en Cache Storage ni se encolan para enviarse después. Se conserva el almacenamiento de sesión existente de Supabase Auth.
+
+Para publicarla, servir `dist/` mediante HTTPS con fallback de las rutas SPA a `index.html`, respetando los archivos estáticos reales. Servir `/sw.js` con revalidación (`Cache-Control: no-cache`) y el manifest con tipo `application/manifest+json`. El botón de instalación aparece cuando el navegador emite `beforeinstallprompt`; en navegadores sin ese evento se utiliza su menú de instalación o «Añadir a pantalla de inicio». La prueba local usa localhost, que admite service workers. Este cambio no despliega el hosting del frontend.
+
+`index.html` incluye metadatos Open Graph, tarjeta social e imagen de 1200×630. Configurar `VITE_PUBLIC_SITE_URL` con el origen real del frontend antes de compilar para generar las URL sociales absolutas. No se supone un dominio de producción. Los iconos e imagen social se pueden reproducir con `npm run assets:pwa` a partir de los vectores originales de BullVest.
+
+Verificación de la fase 8:
+
+```sh
+npm run build
+npm run lint
+npm test
+npm run test:browser -- --workers=3
+npm run test:pwa
+npx supabase db query --linked --file supabase/tests/phase8_audit.sql
+```
+
+Resultado: build sin errores TypeScript, ESLint sin errores ni avisos, 15 pruebas unitarias, 22 pruebas de navegador y una prueba de PWA sobre el build de producción aprobadas. Las pruebas de navegador simulan Supabase; la auditoría SQL usa la base de datos real con rollback. La prueba PWA verifica manifest, dimensiones de iconos, metadatos, service worker activo, navegación offline y ausencia de datos privados en la caché. Vite conserva el aviso de bundle principal superior a 500 kB.
