@@ -329,9 +329,9 @@ export function SimulatorPage() {
         <div className="grid min-w-0 items-start gap-0 border-t border-zinc-800 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div id="market-results" role="tabpanel" aria-label={searching ? 'Resultados de búsqueda global' : undefined}
             aria-labelledby={searching ? undefined : `market-tab-${marketFilter}`} aria-busy={loading} className="min-w-0">
-            {loading && assets.length === 0 ? <p role="status" className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-400"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Cargando cotizaciones…</p>
-              : <MarketTable assets={visibleAssets} selectedId={selectedId} filter={searching ? null : marketFilter}
-                  disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onOrder={openOrder} />}
+            <MarketTable assets={visibleAssets} selectedId={selectedId} filter={searching ? null : marketFilter}
+                  loading={loading && assets.length === 0}
+                  disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onOrder={openOrder} />
           </div>
           <div ref={orderPanel} className="min-w-0 scroll-mt-32 border-t border-zinc-800 p-3 xl:border-t-0 xl:border-l">
             <OrderForm key={`${selectedAsset?.id ?? 'none'}:${orderType}`} asset={selectedAsset}

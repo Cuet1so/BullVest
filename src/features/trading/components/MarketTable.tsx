@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Skeleton } from '../../../components/ui/Skeleton';
 import { Bitcoin, Building2, ChartNoAxesCombined, Coins, Globe2, SearchX } from 'lucide-react';
 import type { Asset, OrderType } from '../services/tradingService';
 import { canQuoteTrade, categoryLabel, finiteNumber, formatChange, formatPrice, getSignal } from '../utils/market';
 import type { MarketFilter } from '../utils/market';
 
-export function MarketTable({ assets, selectedId, filter, disabled, onOrder }: {
+export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loading = false }: {
+  loading?: boolean;
   assets: Asset[];
   selectedId: string | null;
   filter: MarketFilter | null;
@@ -17,11 +19,12 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder }: {
     return () => window.clearInterval(timer);
   }, []);
   const extraMetric = filter === 'volatile' ? 'volatility_1d' : filter === 'up30d' || filter === 'down30d' ? 'change_30d' : null;
-  if (assets.length === 0) return (
+  if (!loading && assets.length === 0) return (
     <div className="px-6 py-16 text-center text-zinc-400"><SearchX className="mx-auto mb-3 size-8 text-zinc-600" aria-hidden="true" /><p className="text-sm">No hay activos que coincidan.</p><p className="mt-2 text-xs">Prueba otra categoría o busca en todo el mercado.</p></div>
   );
   return (
-    <div className="max-h-[620px] overflow-auto overscroll-contain [scrollbar-width:thin]" tabIndex={0} role="region" aria-label="Tabla de mercado, desplazable">
+    <div className="min-w-0 max-w-full max-h-[620px] overflow-x-auto overflow-y-auto touch-pan-x touch-pan-y touch-pinch-zoom overscroll-x-contain scroll-smooth motion-reduce:scroll-auto [scrollbar-width:thin] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-400" tabIndex={0} role="region" aria-label="Tabla de mercado, desplazable" aria-busy={loading}>
+      {loading && <p role="status" className="sr-only">Cargando cotizaciones…</p>}
       <table className="w-full min-w-[620px] border-collapse text-sm" aria-label="Cotizaciones del mercado">
         <thead className="sticky top-0 z-10 bg-zinc-900 text-[11px] font-medium uppercase tracking-wide text-zinc-500"><tr>
           <th scope="col" className="px-4 py-4 text-left">Instrumento</th>
@@ -31,7 +34,12 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder }: {
           {extraMetric && <th scope="col" className="px-4 py-4 text-right">{extraMetric === 'change_30d' ? 'Variación 30 d' : 'Volatilidad 1 d'}</th>}
         </tr></thead>
         <tbody className="divide-y divide-zinc-800/70">
-          {assets.map((asset) => {
+          {loading ? Array.from({ length: 5 }, (_, index) => <tr key={index} aria-hidden="true">
+            <td className="px-4 py-4"><div className="flex items-start gap-3"><Skeleton className="mt-0.5 size-9 shrink-0 rounded-full" /><div className="space-y-2"><Skeleton className="h-5 w-16" /><Skeleton className="h-3 w-28" /><Skeleton className="h-5 w-20" /></div></div></td>
+            {[0, 1].map((side) => <td key={side} className="px-3 py-4"><Skeleton className="ml-auto h-4 w-20" /><Skeleton className="mt-2 ml-auto h-9 w-24" /></td>)}
+            <td className="px-4 py-4"><Skeleton className="ml-auto h-4 w-16" /></td>
+            {extraMetric && <td className="px-4 py-4"><Skeleton className="ml-auto h-4 w-16" /></td>}
+          </tr>) : assets.map((asset) => {
             const Icon = asset.category === 'crypto' ? Bitcoin : asset.category === 'commodities' ? Coins : asset.category === 'forex' ? Globe2 : asset.category === 'indices' ? ChartNoAxesCombined : Building2;
             const signal = getSignal(asset.signal_type);
             const buyAvailable = canQuoteTrade(asset, 'BUY', now);

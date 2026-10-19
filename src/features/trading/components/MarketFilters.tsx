@@ -10,12 +10,12 @@ export function MarketFilters({ value, searching, onChange }: {
 }) {
   const list = useRef<HTMLDivElement>(null);
   function scroll(direction: number) {
-    list.current?.scrollBy({ left: direction * 280, behavior: 'smooth' });
+    list.current?.scrollBy({ left: direction * 280, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
   return (
     <div className="flex min-w-0 items-stretch border-y border-zinc-800">
       <button type="button" onClick={() => scroll(-1)} aria-label="Ver filtros anteriores" className="shrink-0 px-1 text-zinc-400 hover:bg-zinc-800 hover:text-white sm:px-2"><ChevronLeft className="size-4" /></button>
-      <div ref={list} role="tablist" aria-label="Filtros de mercado" className="flex min-w-0 flex-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
+      <div ref={list} role="tablist" aria-label="Filtros de mercado" className="flex min-w-0 max-w-full flex-1 overflow-x-auto touch-pan-x touch-pinch-zoom overscroll-x-contain scroll-smooth motion-reduce:scroll-auto [scrollbar-width:thin]">
         {MARKET_FILTERS.map((filter, index) => (
           <button key={filter.id} id={`market-tab-${filter.id}`} role="tab" type="button"
             aria-selected={filter.id === value} aria-controls="market-results" tabIndex={filter.id === value ? 0 : -1}

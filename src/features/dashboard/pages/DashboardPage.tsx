@@ -1,3 +1,4 @@
+import { Skeleton } from '../../../components/ui/Skeleton';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
@@ -83,10 +84,10 @@ export function DashboardPage() {
       {error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200"><AlertCircle className="size-4 shrink-0" aria-hidden="true" /><span>{error} {currentData && 'Se muestran los últimos datos cargados.'}</span><button type="button" onClick={() => void loadDashboard()} disabled={loading} className="underline disabled:opacity-50">Reintentar</button></div>}
       {currentData && (currentData.quoteWarning || currentData.summary.hasStaleQuotes) && <p role="status" className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-sm text-amber-200">No se han podido confirmar cotizaciones recientes. La valoración usa los últimos precios disponibles.</p>}
       <div className="grid min-w-0 gap-5 md:grid-cols-2 xl:grid-cols-3" aria-busy={loading}>
-        <div className="min-w-0 md:col-span-2">{currentData ? <NetWorthWidget summary={currentData.summary} /> : loading ? <WidgetSkeleton label="Cargando patrimonio" /> : <UnavailableWidget label="Patrimonio no disponible" />}</div>
+        <div className="min-w-0 md:col-span-2">{currentData ? <NetWorthWidget summary={currentData.summary} /> : loading ? <WidgetSkeleton label="Cargando patrimonio" kind="netWorth" /> : <UnavailableWidget label="Patrimonio no disponible" />}</div>
         <div className="min-w-0 md:col-span-2 xl:col-span-1"><AccountStatusWidget key={userId} /></div>
         <div className="min-w-0">{currentData ? <Suspense fallback={<WidgetSkeleton label="Cargando gráfico" />}><AllocationChart summary={currentData.summary} /></Suspense> : loading ? <WidgetSkeleton label="Cargando distribución" /> : <UnavailableWidget label="Distribución no disponible" />}</div>
-        <div className="min-w-0 xl:col-span-2">{currentData ? <RecentTransactionsWidget transactions={currentData.transactions} /> : loading ? <WidgetSkeleton label="Cargando operaciones" /> : <UnavailableWidget label="Operaciones no disponibles" />}</div>
+        <div className="min-w-0 xl:col-span-2">{currentData ? <RecentTransactionsWidget transactions={currentData.transactions} /> : loading ? <WidgetSkeleton label="Cargando operaciones" kind="transactions" /> : <UnavailableWidget label="Operaciones no disponibles" />}</div>
       </div>
       {currentData && <PerformancePanel refreshKey={currentData.loadedAt.toISOString()} />}
       {currentData && <p className="flex flex-wrap justify-between gap-2 text-xs text-zinc-500"><span>Valoración orientativa del simulador. {currentData.summary.hasSimulatedQuotes ? 'Incluye precios ficticios de demostración.' : 'No se opera con dinero real.'}</span><span>Última consulta: <time dateTime={currentData.loadedAt.toISOString()}>{currentData.loadedAt.toLocaleTimeString('es-ES')}</time></span></p>}
@@ -94,8 +95,20 @@ export function DashboardPage() {
   );
 }
 
-function WidgetSkeleton({ label }: { label: string }) {
-  return <div role="status" className="min-h-80 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6"><span className="sr-only">{label}</span><div aria-hidden="true" className="space-y-5 motion-safe:animate-pulse"><div className="h-4 w-36 rounded bg-zinc-800" /><div className="h-12 w-3/4 rounded-lg bg-zinc-800" /><div className="h-2 w-full rounded bg-zinc-800" /><div className="mt-12 grid grid-cols-2 gap-4"><div className="h-20 rounded-lg bg-zinc-800" /><div className="h-20 rounded-lg bg-zinc-800" /></div></div></div>;
+function WidgetSkeleton({ label, kind = 'allocation' }: { label: string; kind?: 'netWorth' | 'allocation' | 'transactions' }) {
+  return <div role="status" className="h-full min-h-80 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6">
+    <span className="sr-only">{label}</span><Skeleton className="h-5 w-36" />
+    {kind === 'netWorth' ? <>
+      <Skeleton className="mt-3 h-12 w-3/4" /><Skeleton className="mt-2 h-4 w-2/3" />
+      <div className="mt-8 grid gap-5 border-t border-zinc-800 pt-6 sm:grid-cols-2">{[0, 1].map((i) => <div key={i}><Skeleton className="h-5 w-28" /><Skeleton className="mt-2 h-7 w-36" /></div>)}</div>
+      <Skeleton className="mt-6 h-4 w-full" /><Skeleton className="mt-2 h-1.5 w-full" />
+      <Skeleton className="mt-6 h-10 w-full" />
+      <div className="mt-4 grid gap-4 rounded-xl border border-zinc-800 p-4 sm:grid-cols-2">{[0, 1].map((i) => <div key={i}><Skeleton className="h-4 w-full" /><Skeleton className="mt-2 h-7 w-3/4" /></div>)}</div>
+      <Skeleton className="mt-3 h-10 w-full" />
+    </> : kind === 'transactions' ? <><Skeleton className="mt-5 h-8 w-full" /><div className="mt-3 space-y-3">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div></> : <>
+      <Skeleton className="mx-auto mt-6 size-56 max-w-full rounded-full" /><Skeleton className="mt-6 h-5 w-full" /><Skeleton className="mt-3 h-5 w-3/4" />
+    </>}
+  </div>;
 }
 
 function UnavailableWidget({ label }: { label: string }) {
