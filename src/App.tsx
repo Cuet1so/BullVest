@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 
 import { AppLayout } from "./components/layout/AppLayout";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
@@ -14,6 +14,18 @@ import { AcademyPage } from "./features/academy/pages/AcademyPage";
 import { RankingPage } from "./features/ranking/pages/RankingPage";
 
 import { CheckoutSuccessPage } from "./features/subscription/pages/CheckoutSuccessPage";
+import { LandingPage } from "./features/landing/LandingPage";
+
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <div role="status" className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-300">Comprobando sesión…</div>;
+  return user ? <Navigate to="/dashboard" replace /> : <LandingPage />;
+}
+
+function LoginRoute() {
+  const [params] = useSearchParams();
+  return params.get('mode') === 'signup' ? <RegisterPage /> : <LoginPage />;
+}
 
 function GuestOnlyRoute() {
   const { user, loading } = useAuth();
@@ -53,24 +65,26 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        <Route path="/" element={<HomeRoute />} />
         {/* Rutas públicas */}
         <Route element={<GuestOnlyRoute />}>
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={<LoginRoute />} />
           <Route path="/register" element={<RegisterPage />} />
         </Route>
 
         {/* Rutas que requieren una sesión */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
 
             <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
 
             <Route path="/dashboard" element={<DashboardPage />} />
 
             <Route path="/simulador" element={<SimulatorPage />} />
+            <Route path="/simulator" element={<Navigate to="/simulador" replace />} />
 
             <Route path="/academia" element={<AcademyPage />} />
+            <Route path="/academy" element={<Navigate to="/academia" replace />} />
             <Route path="/ranking" element={<RankingPage />} />
           </Route>
         </Route>

@@ -1,7 +1,7 @@
 import { LoaderCircle } from 'lucide-react';
 
-export function GoogleSignInButton({ disabled, loading, onClick }: {
-  disabled: boolean; loading: boolean; onClick: () => void;
+export function GoogleSignInButton({ disabled, loading, onClick, showDivider = true }: {
+  disabled: boolean; loading: boolean; onClick: () => void; showDivider?: boolean;
 }) {
   return <div className="mt-7">
     <button type="button" onClick={onClick} disabled={disabled}
@@ -15,6 +15,6 @@ export function GoogleSignInButton({ disabled, loading, onClick }: {
         </svg>}
       {loading ? 'Redirigiendo a Google…' : 'Continuar con Google'}
     </button>
-    <div className="mt-6 flex items-center gap-3 text-xs text-zinc-500"><span className="h-px flex-1 bg-zinc-800" />O continúa con correo<span className="h-px flex-1 bg-zinc-800" /></div>
+    {showDivider && <div className="mt-6 flex items-center gap-3 text-xs text-zinc-500"><span className="h-px flex-1 bg-zinc-800" />O continúa con correo<span className="h-px flex-1 bg-zinc-800" /></div>}
   </div>;
 }
