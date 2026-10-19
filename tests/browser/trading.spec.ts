@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, WebSocketRoute } from '@playwright/test';
 import type { Asset } from '../../src/features/trading/services/tradingService';
+import type { MarginPosition } from '../../src/features/trading/services/marginService';
 
 const userId = '00000000-0000-4000-8000-000000000009';
 const user = { id: userId, aud: 'authenticated', role: 'authenticated', email: 'market@example.test', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' };
@@ -11,7 +12,7 @@ function asset(ticker: string, overrides: Partial<Asset> = {}): Asset {
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...overrides };
 }
 
-async function market(page: Page, options: { largeCatalog?: boolean; fail?: boolean } = {}) {
+async function market(page: Page, options: { largeCatalog?: boolean; fail?: boolean; socket?: (ws: WebSocketRoute) => void } = {}) {
   const assets = options.largeCatalog ? Array.from({ length: 505 }, (_, i) => asset(`T${String(i).padStart(4, '0')}`)) : [
     asset('AAPL', { name: 'Apple', has_options: true, signal_type: 'COMPRA FUERTE', change_24h: 2.3 }),
     asset('BTCUSD', { name: 'Bitcoin', category: 'crypto', current_price: 65000, sell_price: 64950, change_24h: -3.2, change_30d: -4, signal_type: 'VENTA FUERTE' }),
@@ -23,7 +24,7 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
     asset('NOBID', { sell_price: null }),
     asset('TINY', { name: 'Tiny crypto', category: 'crypto', current_price: 0.000002, sell_price: 0.0000018 }),
   ];
-  const control = { fail: options.fail ?? false, trades: [] as Record<string, unknown>[], ranges: [] as number[], balance: 1000, quantity: 5, uncertain: false, failProfileAfterTrade: false };
+  const control = { fail: options.fail ?? false, trades: [] as Record<string, unknown>[], ranges: [] as number[], balance: 1000, quantity: 5, uncertain: false, failProfileAfterTrade: false, assetGate: null as Promise<void> | null };
   const fills = new Map<string, { action: string; transaction_id: string; resulting_balance: number; position_quantity: number }>();
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
@@ -31,12 +32,13 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
     localStorage.setItem('sb-zgycwhxwpxbqtivgssml-auth-token', JSON.stringify({ access_token: 'market-test-token', refresh_token: 'market-test-refresh',
       expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, token_type: 'bearer', user: sessionUser }));
   }, user);
-  await page.routeWebSocket('wss://*.supabase.co/**', (ws) => ws.close());
+  await page.routeWebSocket('wss://*.supabase.co/**', options.socket ?? ((ws) => ws.close()));
   await page.route('https://*.supabase.co/**', async (route) => {
     const req = route.request(); const url = new URL(req.url());
     const send = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.pathname === '/auth/v1/user') return send(user);
     if (url.pathname === '/rest/v1/price_alerts') return send([]);
+    if (url.pathname === '/rest/v1/margin_positions') return send([]);
     if (url.pathname === '/rest/v1/rpc/get_portfolio_performance') return send([]);
     if (url.pathname === '/rest/v1/rpc/get_trading_statistics') return send([{ sell_count: 0, winning_sells: 0, win_rate_pct: null }]);
     if (url.pathname === '/rest/v1/profiles') {
@@ -52,7 +54,9 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
       const offset = Number(url.searchParams.get('offset') ?? 0);
       const limit = Number(url.searchParams.get('limit') ?? 500);
       control.ranges.push(offset);
-      return send(assets.slice(offset, offset + limit));
+      const snapshot = structuredClone(assets.slice(offset, offset + limit));
+      if (control.assetGate) await control.assetGate;
+      return send(snapshot);
     }
     if (url.pathname === '/rest/v1/portfolios') return send([{ id: 'holding', user_id: userId, asset_id: 'AAPL', total_quantity: control.quantity, average_buy_price: 90 }]);
     if (url.pathname === '/rest/v1/transactions') return send([]);
@@ -91,6 +95,83 @@ test('confirmed trade remains successful when profile refresh fails', async ({ p
   await page.getByRole('button', { name: 'Reintentar actualización', exact: true }).click();
   await expect(form.getByRole('button', { name: 'Confirmar compra' })).toBeEnabled();
   expect(control.trades).toHaveLength(1);
+  expect(browserErrors).toEqual([]);
+});
+
+test('margin order persists TP/SL and reuses request ID after a lost receipt', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { control, browserErrors } = await market(page);
+  const positions: MarginPosition[] = [];
+  const requests: Record<string, unknown>[] = [];
+  await page.route('https://*.supabase.co/rest/v1/margin_positions*', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(positions) }));
+  await page.route('https://*.supabase.co/functions/v1/trading', async (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === 'open_margin') {
+      if (!positions.length) {
+        control.balance -= body.investment;
+        positions.push({ id: 'margin-test', user_id: userId, asset_id: 'AAPL', client_request_id: body.request_id, side: body.side,
+          investment: body.investment, multiplier: body.multiplier, entry_price: 100, quantity: 5, stop_loss_amount: body.stop_loss, take_profit_amount: body.take_profit,
+          commission: 0, opened_at: new Date().toISOString(), closed_at: null, exit_price: null, realized_pnl: null, close_reason: null, balance_after: control.balance });
+        return route.abort('failed');
+      }
+    } else {
+      positions[0].closed_at = new Date().toISOString(); positions[0].realized_pnl = -5; positions[0].close_reason = 'manual';
+      control.balance += 95;
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ action: body.action, position: positions[0] }) });
+  });
+  await page.goto('/simulador');
+  await page.getByRole('button', { name: 'Margen / Multiplicador' }).click();
+  const form = page.getByRole('form', { name: 'Orden de margen' });
+  await form.getByLabel('Multiplicador', { exact: true }).selectOption('5');
+  await form.getByLabel('Stop Loss', { exact: true }).check();
+  await form.getByLabel('Take Profit', { exact: true }).check();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/margin-mobile.png', fullPage: true });
+  await form.getByRole('button', { name: 'Confirmar posición de margen' }).click();
+  await expect(form.getByRole('alert')).toContainText('No se pudo confirmar');
+  await form.getByRole('button', { name: 'Confirmar posición de margen' }).click();
+  await expect(form.getByRole('status')).toContainText('confirmada');
+  expect(requests[0]).toMatchObject({ action: 'open_margin', investment: 100, multiplier: 5, stop_loss: 10, take_profit: 20 });
+  expect(requests[1].request_id).toBe(requests[0].request_id);
+  expect(control.balance).toBe(900);
+  await page.getByRole('button', { name: 'Cerrar posición', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Posiciones de margen', exact: true })).toContainText('Cerrada');
+  expect(control.balance).toBe(995);
+  expect(browserErrors).toEqual([]);
+});
+
+test('Realtime updates Ask/Bid and spread without reloading the catalog', async ({ page }) => {
+  let sendAsset: ((record: Asset) => void) | undefined;
+  const { assets, control, browserErrors } = await market(page, { socket: (ws) => {
+    ws.onMessage((raw) => {
+      const [join, ref, topic, event, payload] = JSON.parse(String(raw));
+      if (event === 'phx_join') {
+        const changes = (payload.config?.postgres_changes ?? []).map((change: Record<string, unknown>, i: number) => ({ ...change, id: i + 1 }));
+        ws.send(JSON.stringify([join, ref, topic, 'phx_reply', { status: 'ok', response: { postgres_changes: changes } }]));
+        if (topic === 'realtime:public:assets') sendAsset = (record) => ws.send(JSON.stringify([join, null, topic, 'postgres_changes', { ids: [1], data: { schema: 'public', table: 'assets', type: 'UPDATE', commit_timestamp: record.updated_at, record, old_record: {}, columns: [] } }]));
+      } else if (event === 'heartbeat') ws.send(JSON.stringify([join, ref, topic, 'phx_reply', { status: 'ok', response: {} }]));
+    });
+  } });
+  await page.goto('/simulador');
+  await expect(page.getByText('Realtime conectado', { exact: true })).toBeVisible();
+  const reads = control.ranges.length;
+  sendAsset!({ ...assets[0], current_price: 120, sell_price: 118, updated_at: new Date(Date.now() + 1000).toISOString() });
+  await expect(page.locator('[data-ticker="AAPL"]')).toContainText('120,00');
+  await expect(page.locator('[data-ticker="AAPL"]')).toContainText('118,00');
+  await expect(page.locator('[data-ticker="AAPL"]')).toContainText('1.6667 %');
+  await expect(page.getByRole('region', { name: 'Formulario de operaciones' })).toContainText('120,00');
+  expect(control.ranges.length).toBe(reads);
+  let release!: () => void;
+  control.assetGate = new Promise<void>((resolve) => { release = resolve; });
+  await page.getByRole('button', { name: 'Actualizar', exact: true }).click();
+  await expect.poll(() => control.ranges.length).toBeGreaterThan(reads);
+  sendAsset!({ ...assets[0], current_price: 150, sell_price: 149, updated_at: new Date(Date.now() + 2000).toISOString() });
+  await expect(page.locator('[data-ticker="AAPL"]')).toContainText('150,00');
+  release(); control.assetGate = null;
+  await expect(page.getByRole('button', { name: 'Actualizar', exact: true })).toBeEnabled();
+  await expect(page.locator('[data-ticker="AAPL"]')).toContainText('150,00');
   expect(browserErrors).toEqual([]);
 });
 

@@ -238,6 +238,91 @@ export type Database = {
           },
         ]
       }
+      margin_positions: {
+        Row: {
+          asset_id: string
+          balance_after: number
+          client_request_id: string
+          close_reason: string | null
+          closed_at: string | null
+          commission: number
+          entry_price: number
+          exit_price: number | null
+          id: string
+          investment: number
+          multiplier: number
+          opened_at: string
+          quantity: number
+          realized_pnl: number | null
+          side: string
+          stop_loss_amount: number | null
+          take_profit_amount: number | null
+          user_id: string
+        }
+        Insert: {
+          asset_id: string
+          balance_after: number
+          client_request_id: string
+          close_reason?: string | null
+          closed_at?: string | null
+          commission?: number
+          entry_price: number
+          exit_price?: number | null
+          id?: string
+          investment: number
+          multiplier: number
+          opened_at?: string
+          quantity: number
+          realized_pnl?: number | null
+          side: string
+          stop_loss_amount?: number | null
+          take_profit_amount?: number | null
+          user_id: string
+        }
+        Update: {
+          asset_id?: string
+          balance_after?: number
+          client_request_id?: string
+          close_reason?: string | null
+          closed_at?: string | null
+          commission?: number
+          entry_price?: number
+          exit_price?: number | null
+          id?: string
+          investment?: number
+          multiplier?: number
+          opened_at?: string
+          quantity?: number
+          realized_pnl?: number | null
+          side?: string
+          stop_loss_amount?: number | null
+          take_profit_amount?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "margin_positions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "margin_positions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "margin_positions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       performance_baselines: {
         Row: {
           equity: number
@@ -904,6 +989,39 @@ export type Database = {
         }
         Returns: boolean
       }
+      close_margin_position: {
+        Args: {
+          p_automatic?: boolean
+          p_position_id: string
+          p_user_id: string
+        }
+        Returns: {
+          asset_id: string
+          balance_after: number
+          client_request_id: string
+          close_reason: string | null
+          closed_at: string | null
+          commission: number
+          entry_price: number
+          exit_price: number | null
+          id: string
+          investment: number
+          multiplier: number
+          opened_at: string
+          quantity: number
+          realized_pnl: number | null
+          side: string
+          stop_loss_amount: number | null
+          take_profit_amount: number | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "margin_positions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       complete_academy_lesson: {
         Args: { p_lesson_id: string }
         Returns: {
@@ -984,6 +1102,44 @@ export type Database = {
           win_rate_pct: number
           winning_sells: number
         }[]
+      }
+      open_margin_position: {
+        Args: {
+          p_asset_id: string
+          p_investment: number
+          p_multiplier: number
+          p_request_id: string
+          p_side: string
+          p_stop_loss?: number
+          p_take_profit?: number
+          p_user_id: string
+        }
+        Returns: {
+          asset_id: string
+          balance_after: number
+          client_request_id: string
+          close_reason: string | null
+          closed_at: string | null
+          commission: number
+          entry_price: number
+          exit_price: number | null
+          id: string
+          investment: number
+          multiplier: number
+          opened_at: string
+          quantity: number
+          realized_pnl: number | null
+          side: string
+          stop_loss_amount: number | null
+          take_profit_amount: number | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "margin_positions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       record_lesson_result: {
         Args: {

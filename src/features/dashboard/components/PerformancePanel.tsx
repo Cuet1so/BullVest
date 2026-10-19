@@ -36,7 +36,7 @@ export function PerformancePanel({ refreshKey }: { refreshKey: string }) {
       {error && <p role="alert" className="mt-4 text-sm text-rose-300">{error} <button type="button" onClick={() => void load()} className="underline">Reintentar métricas</button></p>}
       {loading && !data ? <div role="status" aria-busy="true"><span className="sr-only">Cargando rendimiento…</span><div className="my-6 grid gap-3 sm:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="rounded-xl border border-zinc-800 p-4"><Skeleton className="h-4 w-24" /><Skeleton className="mt-2 h-8 w-20" /><Skeleton className="mt-2 h-14 w-full" /></div>)}</div><Skeleton className="h-72 w-full" /><Skeleton className="mt-4 h-10 w-full" /></div> : data && <>
         <div className="my-6 grid gap-3 sm:grid-cols-3">
-          <Metric label="Win Rate" value={percent(data.winRate)} note={`${data.sellCount} ventas cerradas; las ventas sin ganancia no cuentan como victoria.`} />
+          <Metric label="Win Rate" value={percent(data.winRate)} note={`${data.sellCount} ventas al contado cerradas; las ventas sin ganancia no cuentan como victoria. No incluye posiciones de margen.`} />
           <Metric label="Max Drawdown" value={percent(data.maxDrawdown)} note="Caída máxima observada del índice ajustado por recargas; no incluye mínimos entre observaciones." />
           <Metric label="Ratio Sharpe" value={data.sharpe?.toLocaleString('es-ES', { maximumFractionDigits: 2 }) ?? '—'} note={`${data.dailyReturnCount} retornos diarios válidos. Anualización 365 días, tasa libre de riesgo 0 %. Requiere al menos 2 retornos y variación.`} />
         </div>

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Skeleton } from '../../../components/ui/Skeleton';
+import { PriceTick } from './PriceTick';
+import { spreadPercentage } from '../utils/market';
 import { Bitcoin, Building2, ChartNoAxesCombined, Coins, Globe2, SearchX } from 'lucide-react';
 import type { Asset, OrderType } from '../services/tradingService';
-import { canQuoteTrade, categoryLabel, finiteNumber, formatChange, formatPrice, getSignal } from '../utils/market';
+import { canQuoteTrade, categoryLabel, finiteNumber, formatChange, getSignal } from '../utils/market';
 import type { MarketFilter } from '../utils/market';
 
 export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loading = false }: {
@@ -31,12 +33,14 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loa
           <th scope="col" className="px-3 py-4 text-right">Venta</th>
           <th scope="col" className="px-3 py-4 text-right">Compra</th>
           <th scope="col" className="px-4 py-4 text-right">Variación 24 h</th>
+          <th scope="col" className="px-4 py-4 text-right">Spread</th>
           {extraMetric && <th scope="col" className="px-4 py-4 text-right">{extraMetric === 'change_30d' ? 'Variación 30 d' : 'Volatilidad 1 d'}</th>}
         </tr></thead>
         <tbody className="divide-y divide-zinc-800/70">
           {loading ? Array.from({ length: 5 }, (_, index) => <tr key={index} aria-hidden="true">
             <td className="px-4 py-4"><div className="flex items-start gap-3"><Skeleton className="mt-0.5 size-9 shrink-0 rounded-full" /><div className="space-y-2"><Skeleton className="h-5 w-16" /><Skeleton className="h-3 w-28" /><Skeleton className="h-5 w-20" /></div></div></td>
             {[0, 1].map((side) => <td key={side} className="px-3 py-4"><Skeleton className="ml-auto h-4 w-20" /><Skeleton className="mt-2 ml-auto h-9 w-24" /></td>)}
+            <td className="px-4 py-4"><Skeleton className="ml-auto h-4 w-16" /></td>
             <td className="px-4 py-4"><Skeleton className="ml-auto h-4 w-16" /></td>
             {extraMetric && <td className="px-4 py-4"><Skeleton className="ml-auto h-4 w-16" /></td>}
           </tr>) : assets.map((asset) => {
@@ -63,7 +67,7 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loa
                 {(['SELL', 'BUY'] as const).map((side) => {
                   const available = side === 'BUY' ? buyAvailable : sellAvailable;
                   return <td key={side} className="px-3 py-4 text-right">
-                    <span className="block whitespace-nowrap text-xs font-medium tabular-nums text-zinc-200">{formatPrice(side === 'BUY' ? asset.current_price : asset.sell_price, asset.currency)}</span>
+                    <PriceTick price={side === 'BUY' ? asset.current_price : asset.sell_price} currency={asset.currency} className="block whitespace-nowrap text-xs font-medium text-zinc-200" />
                     <button type="button" aria-label={`${side === 'BUY' ? 'COMPRAR' : 'VENDER'} ${asset.ticker}`} disabled={disabled || !available}
                       title={!asset.is_tradable ? 'Activo disponible solo para consulta' : !available ? 'Cotización no disponible para operar' : `Preparar ${side === 'BUY' ? 'compra' : 'venta'} de ${asset.ticker}`}
                       onClick={() => onOrder(asset, side)}
@@ -73,6 +77,7 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loa
                   </td>;
                 })}
                 <td className="whitespace-nowrap px-4 py-4 text-right"><Change value={asset.change_24h} /></td>
+                <td className="whitespace-nowrap px-4 py-4 text-right text-xs tabular-nums text-zinc-400">{spreadPercentage(asset.current_price, asset.sell_price)?.toFixed(4) ?? '—'} %</td>
                 {extraMetric && <td className="whitespace-nowrap px-4 py-4 text-right"><Change value={asset[extraMetric]} neutral={extraMetric === 'volatility_1d'} /></td>}
               </tr>
             );

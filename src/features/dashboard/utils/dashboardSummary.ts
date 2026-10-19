@@ -10,6 +10,7 @@ export interface DashboardHolding {
   sellPrice: number | null;
   quotedAt: string | null;
   isSimulated: boolean;
+  valuation?: 'margin';
 }
 
 export interface ValuedHolding extends DashboardHolding {
@@ -43,13 +44,13 @@ export function buildDashboardSummary(cashBalance: number, holdings: DashboardHo
     throw new Error('No se puede calcular el patrimonio con el saldo disponible.');
   }
   const valuedHoldings = holdings.map((holding) => {
-    if (![holding.quantity, holding.averageBuyPrice, holding.currentPrice]
-      .every((value) => Number.isFinite(value) && value > 0)) {
+    if (![holding.quantity, holding.averageBuyPrice].every((value) => Number.isFinite(value) && value > 0)
+      || !Number.isFinite(holding.currentPrice) || (holding.valuation === 'margin' ? holding.currentPrice < 0 : holding.currentPrice <= 0)) {
       throw new Error(`No hay una valoración válida para ${holding.ticker}.`);
     }
     const marketValue = holding.quantity * holding.currentPrice;
     const costBasis = holding.quantity * holding.averageBuyPrice;
-    const bidValue = bidPositionValue(holding.quantity, holding.currentPrice, holding.sellPrice);
+    const bidValue = holding.valuation === 'margin' ? marketValue : bidPositionValue(holding.quantity, holding.currentPrice, holding.sellPrice);
     return { ...holding, marketValue, costBasis, unrealizedPnl: marketValue - costBasis,
       bidValue, bidUnrealizedPnl: bidValue === null ? null : bidValue - costBasis };
   });

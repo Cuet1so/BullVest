@@ -7,7 +7,7 @@ export function RecentTransactionsWidget({ transactions }: { transactions: Recen
   return (
     <section aria-labelledby="recent-transactions-title" className="h-full min-w-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 id="recent-transactions-title" className="text-lg font-semibold">Últimas operaciones</h2><p className="mt-1 text-xs text-zinc-400">Tus 5 movimientos más recientes.</p></div>
+        <div><h2 id="recent-transactions-title" className="text-lg font-semibold">Últimas operaciones</h2><p className="mt-1 text-xs text-zinc-400">Tus 5 movimientos al contado más recientes. El historial de margen está en el simulador.</p></div>
         <Link to="/simulador" className="text-xs font-medium text-emerald-300 hover:underline">Ir al simulador →</Link>
       </div>
       {transactions.length === 0 ? (

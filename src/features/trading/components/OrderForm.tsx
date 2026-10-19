@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowDownLeft, ArrowUpRight, LoaderCircle } from 'lucide-react';
 import type { Asset, OrderType } from '../services/tradingService';
-import { canQuoteTrade, formatPrice, getOrderPrice } from '../utils/market';
+import { canQuoteTrade, getOrderPrice, spreadPercentage } from '../utils/market';
+import { PriceTick } from './PriceTick';
 
 interface OrderFormProps {
   asset: Asset | null;
@@ -142,7 +143,8 @@ export function OrderForm({
           {!validQuantity && <p className="mt-2 text-xs text-amber-300">Introduce una cantidad positiva con hasta 8 decimales.</p>}
         </div>
         <dl className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/70 p-4 text-sm">
-          <div className="flex justify-between gap-2"><dt className="text-zinc-400">Precio de {orderType === 'BUY' ? 'compra' : 'venta'}</dt><dd className="font-medium tabular-nums text-zinc-100">{formatPrice(price, asset?.currency)}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-zinc-400">Precio de {orderType === 'BUY' ? 'compra' : 'venta'}</dt><dd className="font-medium tabular-nums text-zinc-100"><PriceTick price={price} currency={asset?.currency} /></dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-zinc-400">Spread</dt><dd>{asset ? spreadPercentage(asset.current_price, asset.sell_price)?.toFixed(4) ?? '—' : '—'} %</dd></div>
           <div className="flex justify-between gap-2"><dt className="text-zinc-400">Saldo disponible</dt><dd className="font-medium tabular-nums text-zinc-100">{usd.format(availableBalance)}</dd></div>
           <div className="flex justify-between gap-2"><dt className="text-zinc-400">Unidades en cartera</dt><dd className="font-medium tabular-nums text-zinc-100">{heldQuantity.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')}</dd></div>
           <div className="border-t border-zinc-800 pt-3 flex justify-between gap-2"><dt className="font-medium text-zinc-200">Importe estimado</dt><dd className="font-bold tabular-nums text-emerald-300">{usd.format(estimatedTotal)}</dd></div>

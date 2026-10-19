@@ -375,6 +375,10 @@ allow_dynamic_registration = false
 [functions.refresh-quotes]
 verify_jwt = true
 
+# Server-to-server ticker: @supabase/server validates the secret apikey.
+[functions.market-ticker]
+verify_jwt = false
+
 # User JWTs are verified with auth.getUser inside both billing functions.
 # This supports modern Supabase signing keys and preflight requests.
 [functions.create-checkout-session]

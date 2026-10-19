@@ -54,6 +54,8 @@ const KNOWN_ERRORS = new Set([
   'RELOAD_ALLOWED_ONLY_WITH_100_OR_LESS',
   'NO_FREE_LIVES_REMAINING',
   'REQUEST_ID_REUSED_WITH_DIFFERENT_ORDER',
+  'INVALID_MARGIN_ORDER', 'MARGIN_TOO_SMALL_FOR_SPREAD', 'POSITION_NOT_FOUND',
+  'TOO_MANY_OPEN_POSITIONS',
 ]);
 
 function fail(status: number, code: string): Response {
@@ -81,6 +83,29 @@ export default {
       payload = await request.json();
     } catch {
       return fail(400, 'INVALID_JSON');
+    }
+
+    if (isRecord(payload) && (payload.action === 'open_margin' || payload.action === 'close_margin')) {
+      const opening = payload.action === 'open_margin';
+      const money = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 1_000_000_000 && Math.abs(value * 100 - Math.round(value * 100)) < 0.00001;
+      if (opening) {
+        if (typeof payload.asset_id !== 'string' || !UUID_RE.test(payload.asset_id)
+          || typeof payload.request_id !== 'string' || !UUID_RE.test(payload.request_id)
+          || (payload.side !== 'BUY' && payload.side !== 'SELL') || ![1,2,5,10,20,50,100].includes(payload.multiplier as number)
+          || !money(payload.investment) || (payload.stop_loss != null && !money(payload.stop_loss))
+          || (payload.take_profit != null && !money(payload.take_profit))) return fail(400, 'INVALID_MARGIN_ORDER');
+      } else if (typeof payload.position_id !== 'string' || !UUID_RE.test(payload.position_id)) return fail(400, 'INVALID_MARGIN_ORDER');
+      const { data, error } = opening
+        ? await ctx.supabaseAdmin.rpc('open_margin_position', {
+          p_user_id: userId, p_asset_id: payload.asset_id, p_side: payload.side,
+          p_investment: payload.investment, p_multiplier: payload.multiplier, p_request_id: payload.request_id,
+          p_stop_loss: payload.stop_loss ?? null, p_take_profit: payload.take_profit ?? null,
+        })
+        : await ctx.supabaseAdmin.rpc('close_margin_position', { p_user_id: userId, p_position_id: payload.position_id, p_automatic: false });
+      if (error) return fail(409, rpcErrorCode(error.message));
+      const position = Array.isArray(data) ? data[0] : data;
+      if (!position?.id) return fail(500, 'SERVER_ERROR');
+      return Response.json({ action: payload.action, position });
     }
 
     const parsed = parseRequest(payload);

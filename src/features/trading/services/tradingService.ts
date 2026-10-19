@@ -44,6 +44,9 @@ export class TradingError extends Error {
 
 const TRADING_ERROR_MESSAGES: Record<string, string> = {
   INVALID_ORDER: 'Introduce una cantidad válida (hasta 8 decimales).',
+  INVALID_MARGIN_ORDER: 'Revisa la inversión, el multiplicador y los límites TP/SL.',
+  MARGIN_TOO_SMALL_FOR_SPREAD: 'El spread alcanza tu margen o Stop Loss. Reduce el multiplicador o ajusta el límite.',
+  POSITION_NOT_FOUND: 'No se encuentra esa posición de margen.',
   INVALID_QUANTITY_OR_PRICE: 'La cantidad o el precio no son válidos.',
   INSUFFICIENT_FICTIONAL_FUNDS: 'Saldo ficticio insuficiente para esta compra.',
   INSUFFICIENT_ASSET_QUANTITY: 'No tienes suficientes unidades para vender.',

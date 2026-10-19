@@ -11,6 +11,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
+import { useAssets } from '../hooks/useAssets';
+import { supabase } from '../../../lib/supabase';
+import { MarginOrderForm } from '../components/MarginOrderForm';
+import { MarginPositions } from '../components/MarginPositions';
+import { getMarginPositions, openMargin, closeMargin } from '../services/marginService';
+import type { MarginOrder, MarginPosition } from '../services/marginService';
+import { marginValue } from '../utils/margin';
 import { withTimeout } from '../../../lib/withTimeout';
 import { bidPositionValue } from '../utils/valuation';
 import { OutOfLivesModal } from '../../subscription/components/OutOfLivesModal';
@@ -23,7 +30,6 @@ import type { MarketFilter } from '../utils/market';
 import { triggerQuoteRefresh } from '../services/quoteService';
 import {
   executeTrade,
-  getAssets,
   getPositions,
   getTransactions,
   reloadLifeBalance,
@@ -51,8 +57,10 @@ type PendingAction = 'trade' | 'reload' | null;
 export function SimulatorPage() {
   const { user, profile, refreshProfile } = useAuth();
   const userId = user?.id;
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const { assets, readAssets, connection } = useAssets(userId);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+  const [marginPositions, setMarginPositions] = useState<MarginPosition[]>([]);
+  const [executionMode, setExecutionMode] = useState<'spot' | 'margin'>('spot');
   const [transactions, setTransactions] = useState<TradeTransaction[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -82,15 +90,17 @@ export function SimulatorPage() {
       // Leer el catalogo solo despues de confirmar el refresco en PostgreSQL.
       await withTimeout(triggerQuoteRefresh());
       if (readVersion.current !== version) return false;
-      const [nextAssets, nextPositions, nextTransactions] = await withTimeout(Promise.all([
-        getAssets(),
+      const [nextAssets, nextPositions, nextTransactions, nextMargin] = await withTimeout(Promise.all([
+        readAssets(),
         getPositions(userId),
         getTransactions(userId),
+        getMarginPositions(userId),
       ]));
       if (readVersion.current !== version) return false;
-      setAssets(nextAssets);
+
       setPositions(nextPositions);
       setTransactions(nextTransactions);
+      setMarginPositions(nextMargin);
       setSelectedId((previous) =>
         nextAssets.some((asset) => asset.id === previous)
           ? previous
@@ -107,7 +117,7 @@ export function SimulatorPage() {
     } finally {
       if (readVersion.current === version) setLoading(false);
     }
-  }, [userId]);
+  }, [userId, readAssets]);
 
   const refreshView = useCallback(async (confirmed?: 'reload' | 'trade') => {
     if (refreshPending.current || (!confirmed && mutationPending.current)) return;
@@ -165,6 +175,17 @@ export function SimulatorPage() {
     };
   }, [userId, loading, isRefreshing, needsSync, pendingAction, loadData]);
 
+  useEffect(() => {
+    if (!userId) return;
+    let active = true;
+    const channel = supabase.channel(`margin:${userId}`).on('postgres_changes', {
+      event: '*', schema: 'public', table: 'margin_positions', filter: `user_id=eq.${userId}`,
+    }, () => {
+      if (active) void refreshView();
+    }).subscribe();
+    return () => { active = false; void supabase.removeChannel(channel).catch(() => {}); };
+  }, [userId, refreshView]);
+
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedId) ?? null,
     [assets, selectedId],
@@ -197,13 +218,19 @@ export function SimulatorPage() {
     };
   }), [positions, assetsById]);
 
-  const holdingsValue = positionSummaries.reduce(
+  const openMargins = marginPositions.filter((position) => !position.closed_at);
+  const marginValues = openMargins.map((position) => {
+    const asset = assetsById.get(position.asset_id);
+    return marginValue(position, asset?.current_price ?? null, asset?.sell_price ?? null);
+  });
+  const marginEquity = marginValues.reduce((total, item) => total + (item?.equity ?? 0), 0);
+  const holdingsValue = marginEquity + positionSummaries.reduce(
     (total, item) => total + (item.currentValue ?? 0), 0,
   );
-  const marketDataComplete = positionSummaries.every((item) => item.currentValue !== null);
-  const investedCost = positionSummaries.reduce((total, item) => total + item.cost, 0);
-  const bidComplete = positionSummaries.every((item) => item.bidValue !== null);
-  const bidValue = bidComplete ? positionSummaries.reduce((total, item) => total + item.bidValue!, 0) : null;
+  const marketDataComplete = marginValues.every((item) => item !== null) && positionSummaries.every((item) => item.currentValue !== null);
+  const investedCost = openMargins.reduce((total, item) => total + item.investment, 0) + positionSummaries.reduce((total, item) => total + item.cost, 0);
+  const bidComplete = marginValues.every((item) => item !== null) && positionSummaries.every((item) => item.bidValue !== null);
+  const bidValue = bidComplete ? marginEquity + positionSummaries.reduce((total, item) => total + item.bidValue!, 0) : null;
   const unrealizedPnl = bidValue === null ? null : bidValue - investedCost;
   const visibleAssets = useMemo(
     () => filterMarketAssets(assets, marketFilter, search),
@@ -252,6 +279,16 @@ export function SimulatorPage() {
     }
   }
 
+  async function mutateMargin(order: MarginOrder | string): Promise<void> {
+    if (mutationPending.current || refreshPending.current || needsSync) throw new Error('Espera a que termine la sincronizacion.');
+    mutationPending.current = true; setPendingAction('trade');
+    try {
+      if (typeof order === 'string') await closeMargin(order); else await openMargin(order);
+      setNeedsSync(true);
+      await refreshView('trade');
+    } finally { mutationPending.current = false; setPendingAction(null); }
+  }
+
   async function reloadWallet(): Promise<void> {
     if (!canReload || mutationPending.current || refreshPending.current) return;
     if (!unlimitedReloads && lives <= 0) { setOutOfLives(true); return; }
@@ -295,7 +332,7 @@ export function SimulatorPage() {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <SummaryCard label="Saldo disponible" value={money.format(balance)} icon={<Wallet className="size-5 text-emerald-400" />} />
-        <SummaryCard label="Patrimonio ficticio (Ask)" value={marketDataComplete ? money.format(balance + holdingsValue) : 'No disponible'} hint="Efectivo + posiciones a precio de compra" />
+        <SummaryCard label="Patrimonio ficticio (Ask)" value={marketDataComplete ? money.format(balance + holdingsValue) : 'No disponible'} hint="Efectivo + contado a Ask + margen neto de P/L" />
         <SummaryCard label="P/L latente de venta (Bid)" value={unrealizedPnl === null ? 'No disponible' : money.format(unrealizedPnl)} hint={bidValue === null ? 'Falta un precio de venta válido; no se sustituye por Ask.' : `Patrimonio estimado al vender: ${money.format(balance + bidValue)}. Precios sujetos a actualización.`} valueClass={unrealizedPnl === null ? 'text-zinc-400' : unrealizedPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} />
       </div>
 
@@ -324,7 +361,7 @@ export function SimulatorPage() {
         <MarketFilters value={marketFilter} searching={searching} onChange={(filter) => { setMarketFilter(filter); setSearch(''); }} />
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs text-zinc-500">
           <p aria-live="polite">{searching ? 'Resultados en todo el mercado' : MARKET_FILTERS.find((filter) => filter.id === marketFilter)?.label} · {visibleAssets.length} de {assets.length} instrumentos</p>
-          <span className="inline-flex items-center gap-2">{loading && <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />}{loading ? 'Actualizando cotizaciones…' : 'Precios de demostración · Capital ficticio'}</span>
+          <span className="text-emerald-300">{connection === 'live' ? 'Realtime conectado' : connection === 'fallback' ? 'Realtime no disponible; refresco periodico activo' : 'Conectando Realtime'}</span><span className="inline-flex items-center gap-2">{loading && <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />}{loading ? 'Actualizando cotizaciones…' : 'Precios de demostración · Capital ficticio'}</span>
         </div>
         <div className="grid min-w-0 items-start gap-0 border-t border-zinc-800 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div id="market-results" role="tabpanel" aria-label={searching ? 'Resultados de búsqueda global' : undefined}
@@ -334,13 +371,15 @@ export function SimulatorPage() {
                   disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onOrder={openOrder} />
           </div>
           <div ref={orderPanel} className="min-w-0 scroll-mt-32 border-t border-zinc-800 p-3 xl:border-t-0 xl:border-l">
-            <OrderForm key={`${selectedAsset?.id ?? 'none'}:${orderType}`} asset={selectedAsset}
+            <div className="mb-3 flex gap-2" role="group" aria-label="Modo de ejecucion">{(['spot', 'margin'] as const).map((mode) => <button key={mode} type="button" disabled={pendingAction !== null} aria-pressed={executionMode === mode} onClick={() => setExecutionMode(mode)} className={`flex-1 rounded-lg border px-2 py-3 text-xs ${executionMode === mode ? 'border-emerald-400 text-emerald-300' : 'border-zinc-700 text-zinc-400'}`}>{mode === 'spot' ? 'Al contado' : 'Margen / Multiplicador'}</button>)}</div>
+            {executionMode === 'margin' && selectedAsset ? <MarginOrderForm key={selectedAsset.id + ':' + orderType} asset={selectedAsset} side={orderType} onSideChange={setOrderType} balance={balance} disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onExecute={mutateMargin} /> : <OrderForm key={`${selectedAsset?.id ?? 'none'}:${orderType}`} asset={selectedAsset}
               orderType={orderType} onOrderTypeChange={setOrderType} availableBalance={balance}
               heldQuantity={Number(selectedHolding?.total_quantity ?? 0)}
-              disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onExecute={submitTrade} />
+              disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onExecute={submitTrade} />}
           </div>
         </div>
       </section>
+      <MarginPositions positions={marginPositions} assets={assets} disabled={loading || isRefreshing || needsSync || pendingAction !== null} onClose={mutateMargin} />
 
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -357,6 +396,7 @@ export function SimulatorPage() {
                 <td className="py-3 text-right tabular-nums">{quantityLabel.format(item.quantity)}</td>
                 <td className="py-3 text-right tabular-nums">{money.format(Number(item.position.average_buy_price))}</td>
                 <td className="py-3 text-right tabular-nums">{item.currentValue === null ? '—' : money.format(item.currentValue)}</td>
+                <td className="py-3 text-right tabular-nums">{item.bidValue === null ? '—' : money.format(item.bidValue)}</td>
                 <td className={`py-3 text-right font-semibold tabular-nums ${item.pnl === null ? 'text-zinc-400' : item.pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{item.pnl === null ? '—' : money.format(item.pnl)}</td>
               </tr>
             ))}

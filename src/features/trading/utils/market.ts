@@ -24,6 +24,11 @@ export function finiteNumber(value: number | null | undefined): value is number 
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+export function spreadPercentage(ask: number | null, bid: number | null): number | null {
+  return finiteNumber(ask) && finiteNumber(bid) && ask > 0 && bid > 0 && bid <= ask
+    ? ((ask - bid) / ask) * 100 : null;
+}
+
 function normalize(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es');
 }

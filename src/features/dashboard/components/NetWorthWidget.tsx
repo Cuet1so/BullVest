@@ -11,7 +11,7 @@ export function NetWorthWidget({ summary }: { summary: DashboardSummary }) {
         <div>
           <h2 id="net-worth-title" className="text-sm font-medium text-emerald-100/80">Patrimonio total</h2>
           <p className="mt-3 break-words text-4xl font-semibold tracking-tight text-white tabular-nums sm:text-5xl">{money.format(summary.netWorth)}</p>
-          <p className="mt-2 text-xs text-zinc-400">Valoración Ask · Liquidez + posiciones a precio de compra</p>
+          <p className="mt-2 text-xs text-zinc-400">Valoración Ask · Liquidez + posiciones al contado + margen neto de P/L</p>
         </div>
         <Link to="/simulador" className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-300/10 focus-visible:outline-2 focus-visible:outline-emerald-300">Operar <ArrowUpRight className="size-4" aria-hidden="true" /></Link>
       </div>

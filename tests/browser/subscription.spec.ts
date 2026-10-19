@@ -18,6 +18,7 @@ async function account(page: Page, lives = 3, pro = false) {
     const send = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.pathname === '/auth/v1/user') return send(user);
     if (url.pathname === '/rest/v1/price_alerts') return send([]);
+    if (url.pathname === '/rest/v1/margin_positions') return send([]);
     if (url.pathname === '/rest/v1/rpc/get_portfolio_performance') return send([]);
     if (url.pathname === '/rest/v1/rpc/get_trading_statistics') return send([{ sell_count: 0, winning_sells: 0, win_rate_pct: null }]);
     if (url.pathname === '/rest/v1/profiles') {
