@@ -3,6 +3,8 @@ import { supabase } from '../../../lib/supabase';
 import { withTimeout } from '../../../lib/withTimeout';
 import { getAssets } from '../services/tradingService';
 import type { Asset } from '../services/tradingService';
+import { appendQuotes } from '../utils/chartSeries';
+import type { QuoteHistory } from '../utils/chartSeries';
 
 function timestamp(asset: Asset): number {
   return Date.parse(asset.updated_at || asset.price_updated_at || '') || 0;
@@ -10,6 +12,7 @@ function timestamp(asset: Asset): number {
 
 export function useAssets(userId: string | undefined) {
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [quoteHistory, setQuoteHistory] = useState<QuoteHistory>({});
   const [connection, setConnection] = useState<'connecting' | 'live' | 'fallback'>('connecting');
   const journal = useRef(new Map<string, { version: number; asset: Asset | null }>());
   const revision = useRef(0);
@@ -27,7 +30,10 @@ export function useAssets(userId: string | undefined) {
       if (event.asset) merged.set(id, event.asset); else merged.delete(id);
     }
     const result = [...merged.values()];
-    if (generation === epoch.current && read === readVersion.current) setAssets(result);
+    if (generation === epoch.current && read === readVersion.current) {
+      setAssets(result);
+      setQuoteHistory((history) => appendQuotes(history, result));
+    }
     return result;
   }, []);
 
@@ -45,6 +51,11 @@ export function useAssets(userId: string | undefined) {
           if (!id) return;
           journal.current.set(id, { version: ++revision.current, asset: null });
           setAssets((current) => current.filter((asset) => asset.id !== id));
+          setQuoteHistory((history) => {
+            const next = { ...history };
+            delete next[id];
+            return next;
+          });
           return;
         }
         // BullVest stores Ask as current_price and Bid as sell_price.
@@ -53,6 +64,7 @@ export function useAssets(userId: string | undefined) {
         const previousEvent = journal.current.get(next.id)?.asset;
         if (previousEvent && timestamp(previousEvent) > timestamp(next)) return;
         journal.current.set(next.id, { version: ++revision.current, asset: next });
+        setQuoteHistory((history) => appendQuotes(history, [next]));
         setAssets((current) => {
           const previous = current.find((asset) => asset.id === next.id);
           if (previous && timestamp(previous) > timestamp(next)) return current;
@@ -84,5 +96,5 @@ export function useAssets(userId: string | undefined) {
     };
   }, [userId, readAssets]);
 
-  return { assets, readAssets, connection };
+  return { assets, readAssets, connection, quoteHistory };
 }

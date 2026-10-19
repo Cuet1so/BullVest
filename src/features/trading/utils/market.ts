@@ -99,7 +99,9 @@ export function isQuoteRecent(asset: Asset, now: number): boolean {
 }
 
 export function canQuoteTrade(asset: Asset, side: OrderType, now: number): boolean {
-  return asset.is_tradable && asset.currency === 'USD' && getOrderPrice(asset, side) !== null && isQuoteRecent(asset, now);
+  // Catalog availability is managed in PostgreSQL, not by a local read-only
+  // flag. Keep quote/account validation aligned with the execution backend.
+  return asset.currency === 'USD' && getOrderPrice(asset, side) !== null && isQuoteRecent(asset, now);
 }
 
 export function formatPrice(price: number | null | undefined, currency = 'USD'): string {

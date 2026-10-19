@@ -59,7 +59,6 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loa
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{categoryLabel(asset.category)}</span>
                         {signal && <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${signal.direction === 'buy' ? 'bg-emerald-400/10 text-emerald-300' : signal.direction === 'sell' ? 'bg-rose-400/10 text-rose-300' : 'bg-zinc-800 text-zinc-300'}`}>{signal.label}</span>}
-                        {!asset.is_tradable && <span className="text-[10px] text-zinc-500">Solo consulta</span>}
                       </div>
                     </div>
                   </div>
@@ -69,7 +68,7 @@ export function MarketTable({ assets, selectedId, filter, disabled, onOrder, loa
                   return <td key={side} className="px-3 py-4 text-right">
                     <PriceTick price={side === 'BUY' ? asset.current_price : asset.sell_price} currency={asset.currency} className="block whitespace-nowrap text-xs font-medium text-zinc-200" />
                     <button type="button" aria-label={`${side === 'BUY' ? 'COMPRAR' : 'VENDER'} ${asset.ticker}`} disabled={disabled || !available}
-                      title={!asset.is_tradable ? 'Activo disponible solo para consulta' : !available ? 'Cotización no disponible para operar' : `Preparar ${side === 'BUY' ? 'compra' : 'venta'} de ${asset.ticker}`}
+                      title={!available ? 'Cotización no disponible para operar' : `Preparar ${side === 'BUY' ? 'compra' : 'venta'} de ${asset.ticker}`}
                       onClick={() => onOrder(asset, side)}
                       className={`mt-2 min-w-24 rounded-lg border px-3 py-2 text-[11px] font-bold tracking-wide transition disabled:cursor-not-allowed disabled:opacity-35 ${side === 'BUY' ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20' : 'border-rose-400/25 bg-rose-400/10 text-rose-300 hover:bg-rose-400/20'}`}>
                       {side === 'BUY' ? 'COMPRAR' : 'VENDER'}

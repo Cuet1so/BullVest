@@ -20,7 +20,7 @@ async function market(page: Page, options: { largeCatalog?: boolean; fail?: bool
     asset('EURUSD', { name: 'Euro dólar', category: 'forex', is_popular: false, current_price: 1.08234, sell_price: 1.08211 }),
     asset('GOLD', { name: 'Oro', category: 'commodities', is_popular: false, change_24h: null, signal_type: null }),
     asset('INDEX', { category: 'indices', is_popular: false }),
-    asset('READONLY', { name: 'Solo consulta', is_tradable: false }),
+    asset('READONLY', { name: 'Legacy catalog flag', is_tradable: false }),
     asset('NOBID', { sell_price: null }),
     asset('TINY', { name: 'Tiny crypto', category: 'crypto', current_price: 0.000002, sell_price: 0.0000018 }),
   ];
@@ -157,21 +157,70 @@ test('Realtime updates Ask/Bid and spread without reloading the catalog', async 
   await page.goto('/simulador');
   await expect(page.getByText('Realtime conectado', { exact: true })).toBeVisible();
   const reads = control.ranges.length;
-  sendAsset!({ ...assets[0], current_price: 120, sell_price: 118, updated_at: new Date(Date.now() + 1000).toISOString() });
+  const firstTick = new Date(Date.now() + 1000).toISOString();
+  sendAsset!({ ...assets[0], current_price: 120, sell_price: 118, updated_at: firstTick, price_updated_at: firstTick });
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('120,00');
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('118,00');
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('1.6667 %');
   await expect(page.getByRole('region', { name: 'Formulario de operaciones' })).toContainText('120,00');
+  const chart = page.getByTestId('libertex-chart');
+  await expect(chart.getByTestId('chart-ask')).toContainText('120');
+  await expect(chart.getByTestId('chart-bid')).toContainText('118');
+  await expect(chart.getByTestId('chart-spread')).toContainText('2 USD');
+  await expect(chart.locator('.recharts-reference-line-line')).toHaveCount(3);
+  await expect(chart.getByTestId('chart-spread-label')).toContainText('2');
+  await expect(chart).toHaveAttribute('data-trend', 'up');
+  for (const period of ['1M', '5M', '15M', '1H', '1D', '1W']) {
+    await chart.getByRole('button', { name: period, exact: true }).click();
+    await expect(chart.getByRole('button', { name: period, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  }
+  await chart.getByRole('button', { name: '1M', exact: true }).click();
+  await expect.poll(async () => Number(await chart.getAttribute('data-points'))).toBeGreaterThanOrEqual(2);
   expect(control.ranges.length).toBe(reads);
   let release!: () => void;
   control.assetGate = new Promise<void>((resolve) => { release = resolve; });
   await page.getByRole('button', { name: 'Actualizar', exact: true }).click();
   await expect.poll(() => control.ranges.length).toBeGreaterThan(reads);
-  sendAsset!({ ...assets[0], current_price: 150, sell_price: 149, updated_at: new Date(Date.now() + 2000).toISOString() });
+  const secondTick = new Date(Date.now() + 2000).toISOString();
+  sendAsset!({ ...assets[0], current_price: 150, sell_price: 149, updated_at: secondTick, price_updated_at: secondTick });
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('150,00');
   release(); control.assetGate = null;
   await expect(page.getByRole('button', { name: 'Actualizar', exact: true })).toBeEnabled();
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('150,00');
+  await expect(chart.getByTestId('chart-spread')).toContainText('1 USD');
+  await page.getByRole('button', { name: 'COMPRAR BTCUSD', exact: true }).click();
+  await expect(chart).toHaveAttribute('aria-label', 'Gráfico de BTCUSD');
+  await expect(chart.getByTestId('chart-ask')).toContainText('65.000');
+  await page.getByRole('button', { name: 'COMPRAR AAPL', exact: true }).click();
+  await expect(chart.getByTestId('chart-ask')).toContainText('150');
+  await expect(chart).toHaveAttribute('data-trend', 'up');
+  const lastTick = new Date(Date.now() + 2500).toISOString();
+  sendAsset!({ ...assets[0], current_price: 95, sell_price: 94, updated_at: lastTick, price_updated_at: lastTick });
+  await expect(chart).toHaveAttribute('data-trend', 'down');
+  const plot = await chart.locator('.recharts-surface').boundingBox();
+  await page.mouse.move(plot!.x + plot!.width * 0.4, plot!.y + plot!.height * 0.5);
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('Precio medio');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await chart.scrollIntoViewIfNeeded();
+  const chartBox = await chart.boundingBox();
+  await page.evaluate((y) => window.scrollTo(0, window.scrollY + y - 220), chartBox!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await chart.screenshot({ path: 'test-results/libertex-chart-mobile.png' });
+  expect(browserErrors).toEqual([]);
+});
+
+test('all asset categories expose buy and sell with no local read-only gate', async ({ page }) => {
+  const { assets, browserErrors } = await market(page);
+  for (const item of assets) item.is_tradable = false; // Legacy cached flag must not lock the UI.
+  await page.goto('/simulador');
+  for (const [tab, ticker] of [['Acciones', 'AAPL'], ['Criptodivisas', 'BTCUSD'],
+    ['Monedas / Forex', 'EURUSD'], ['Productos / Materias Primas', 'GOLD'], ['Índices', 'INDEX']]) {
+    await page.getByRole('tab', { name: tab, exact: true }).click();
+    await expect(page.getByRole('button', { name: `COMPRAR ${ticker}`, exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: `VENDER ${ticker}`, exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: `COMPRAR ${ticker}`, exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Formulario de operaciones' })).toContainText(ticker);
+  }
   expect(browserErrors).toEqual([]);
 });
 
@@ -183,7 +232,9 @@ test('market tabs, global search, signals and rankings with desktop layout', asy
   await expect(page.getByRole('table', { name: 'Cotizaciones del mercado' })).toBeVisible();
   await expect(page.getByRole('cell', { name: '-3,20 %', exact: true })).toBeVisible();
   await expect(page.getByText('COMPRA FUERTE', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'COMPRAR READONLY', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'COMPRAR READONLY', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'VENDER READONLY', exact: true })).toBeEnabled();
+  await expect(page.getByText('Solo consulta', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'VENDER NOBID', exact: true })).toBeDisabled();
   await expect(page.locator('[data-ticker="TINY"]')).toContainText('0,0000018 USD');
   await page.screenshot({ path: 'test-results/market-desktop.png', fullPage: true });

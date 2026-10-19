@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ArrowDownLeft,
@@ -53,11 +53,12 @@ const quantityLabel = new Intl.NumberFormat('en-US', {
 });
 
 type PendingAction = 'trade' | 'reload' | null;
+const LibertexChart = lazy(() => import('../components/LibertexChart'));
 
 export function SimulatorPage() {
   const { user, profile, refreshProfile } = useAuth();
   const userId = user?.id;
-  const { assets, readAssets, connection } = useAssets(userId);
+  const { assets, readAssets, connection, quoteHistory } = useAssets(userId);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [marginPositions, setMarginPositions] = useState<MarginPosition[]>([]);
   const [executionMode, setExecutionMode] = useState<'spot' | 'margin'>('spot');
@@ -104,8 +105,7 @@ export function SimulatorPage() {
       setSelectedId((previous) =>
         nextAssets.some((asset) => asset.id === previous)
           ? previous
-          : nextAssets.find((asset) => asset.is_popular && asset.is_tradable)?.id
-            ?? nextAssets.find((asset) => asset.is_tradable)?.id ?? nextAssets[0]?.id ?? null,
+          : nextAssets.find((asset) => asset.is_popular)?.id ?? nextAssets[0]?.id ?? null,
       );
       return true;
     } catch (error: unknown) {
@@ -363,7 +363,7 @@ export function SimulatorPage() {
           <p aria-live="polite">{searching ? 'Resultados en todo el mercado' : MARKET_FILTERS.find((filter) => filter.id === marketFilter)?.label} · {visibleAssets.length} de {assets.length} instrumentos</p>
           <span className="text-emerald-300">{connection === 'live' ? 'Realtime conectado' : connection === 'fallback' ? 'Realtime no disponible; refresco periodico activo' : 'Conectando Realtime'}</span><span className="inline-flex items-center gap-2">{loading && <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />}{loading ? 'Actualizando cotizaciones…' : 'Precios de demostración · Capital ficticio'}</span>
         </div>
-        <div className="grid min-w-0 items-start gap-0 border-t border-zinc-800 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-w-0 items-start gap-0 border-t border-zinc-800 xl:grid-cols-2">
           <div id="market-results" role="tabpanel" aria-label={searching ? 'Resultados de búsqueda global' : undefined}
             aria-labelledby={searching ? undefined : `market-tab-${marketFilter}`} aria-busy={loading} className="min-w-0">
             <MarketTable assets={visibleAssets} selectedId={selectedId} filter={searching ? null : marketFilter}
@@ -371,6 +371,9 @@ export function SimulatorPage() {
                   disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onOrder={openOrder} />
           </div>
           <div ref={orderPanel} className="min-w-0 scroll-mt-32 border-t border-zinc-800 p-3 xl:border-t-0 xl:border-l">
+            {selectedAsset && <Suspense fallback={<div className="mb-4 h-96 animate-pulse rounded-2xl bg-[#121826]" role="status" aria-label="Cargando gráfico" />}>
+              <LibertexChart key={selectedAsset.id} asset={selectedAsset} ticks={quoteHistory[selectedAsset.id] ?? []} connection={connection} />
+            </Suspense>}
             <div className="mb-3 flex gap-2" role="group" aria-label="Modo de ejecucion">{(['spot', 'margin'] as const).map((mode) => <button key={mode} type="button" disabled={pendingAction !== null} aria-pressed={executionMode === mode} onClick={() => setExecutionMode(mode)} className={`flex-1 rounded-lg border px-2 py-3 text-xs ${executionMode === mode ? 'border-emerald-400 text-emerald-300' : 'border-zinc-700 text-zinc-400'}`}>{mode === 'spot' ? 'Al contado' : 'Margen / Multiplicador'}</button>)}</div>
             {executionMode === 'margin' && selectedAsset ? <MarginOrderForm key={selectedAsset.id + ':' + orderType} asset={selectedAsset} side={orderType} onSideChange={setOrderType} balance={balance} disabled={loading || isRefreshing || needsSync || !!dataError || pendingAction !== null} onExecute={mutateMargin} /> : <OrderForm key={`${selectedAsset?.id ?? 'none'}:${orderType}`} asset={selectedAsset}
               orderType={orderType} onOrderTypeChange={setOrderType} availableBalance={balance}

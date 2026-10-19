@@ -57,8 +57,16 @@ test('frontend and Edge use the same side price and reject absent or crossed bid
   }
   assert.equal(getOrderPrice(asset('A'), 'SELL'), 99);
   assert.equal(canQuoteTrade(asset('A'), 'BUY', now), true);
-  assert.equal(canQuoteTrade(asset('A', { is_tradable: false }), 'BUY', now), false);
+  assert.equal(canQuoteTrade(asset('A', { is_tradable: false }), 'BUY', now), true);
   assert.equal(canQuoteTrade(asset('A', { currency: 'EUR' }), 'BUY', now), false);
   assert.equal(canQuoteTrade(asset('A', { price_updated_at: new Date(now - 121000).toISOString() }), 'BUY', now), false);
   assert.equal(canQuoteTrade(asset('A', { price_updated_at: new Date(now + 6000).toISOString() }), 'BUY', now), false);
+});
+
+test('all five categories allow both sides despite legacy local read-only flags', () => {
+  for (const category of ['stocks', 'crypto', 'forex', 'commodities', 'indices']) {
+    for (const side of ['BUY', 'SELL']) {
+      assert.equal(canQuoteTrade(asset(category, { category, is_tradable: false }), side, now), true);
+    }
+  }
 });
