@@ -6,6 +6,11 @@ test('public landing is responsive and opens the signup form', async ({ page }) 
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Aprender a invertir');
   await expect(page.getByRole('table')).toContainText('Ilimitadas');
+  const headerLogo = page.getByRole('banner').getByRole('link', { name: 'BullVest: ir al inicio' });
+  await expect(headerLogo).toHaveAttribute('href', '/');
+  await expect.poll(() => headerLogo.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await expect(page.locator('#contenido img[alt="BullVest"]')).toBeVisible();
+  await expect(page.getByRole('contentinfo').getByRole('img', { name: 'BullVest' })).toBeVisible();
   await expect(page.getByRole('list').getByRole('listitem')).toHaveCount(5);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
@@ -51,7 +56,23 @@ test('an authenticated visitor is redirected from the root to dashboard', async 
   await page.goto('/');
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole('heading', { name: 'Hola, Ana' })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('link', { name: 'BullVest: ir al Dashboard' })).toHaveAttribute('href', '/dashboard');
   await expect(page.getByRole('heading', { name: /Tu mejor inversión/ })).toHaveCount(0);
+});
+
+test('brand image failure preserves an accessible home link on both auth forms', async ({ page }) => {
+  for (const image of ['/logo.png', '/pwa/icon-192.png', '/pwa/icon-512.png']) {
+    await page.route(`**${image}`, (route) => route.fulfill({ status: 404, body: '' }));
+  }
+  for (const path of ['/login', '/register']) {
+    await page.goto(path);
+    const logo = page.getByRole('link', { name: 'BullVest: ir al inicio', exact: true });
+    await expect(logo.getByTestId('logo-fallback')).toBeVisible();
+    await expect(logo).toContainText('BullVest');
+    await logo.click();
+    await expect(page).toHaveURL('/');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aprender a invertir');
+  }
 });
 
 test('Google CTA starts the existing OAuth flow with dashboard return URL', async ({ page }) => {

@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 
 import {
   CandlestickChart,
   GraduationCap,
   LayoutDashboard,
   LogOut,
-  TrendingUp,
   Trophy,
   Wallet,
 } from "lucide-react";
@@ -14,6 +13,7 @@ import {
 import { SubscriptionActions } from "../../features/subscription/components/SubscriptionActions";
 import { NotificationCenter } from "../../features/notifications/components/NotificationCenter";
 import { PwaControls } from "./PwaControls";
+import { Logo } from '../common/Logo';
 
 import { useAuth } from "../../features/auth/context/AuthContext";
 
@@ -69,25 +69,12 @@ export function AppLayout() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 sm:px-6 lg:px-8">
-          <Link
-            to="/dashboard"
-            aria-label="BullVest: ir al Dashboard"
-            className="flex items-center gap-2.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-400"
-          >
-            <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-400 text-zinc-950">
-              <TrendingUp
-                aria-hidden="true"
-                className="size-5"
-                strokeWidth={2.5}
-              />
-            </span>
-
-            <span className="text-xl font-bold tracking-tight">BullVest</span>
-
+          <div className="flex items-center gap-2.5">
+            <Logo size="sm" />
             <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] font-semibold tracking-widest text-zinc-400">
               BETA
             </span>
-          </Link>
+          </div>
 
           <nav
             aria-label="Navegación principal"

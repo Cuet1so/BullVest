@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "r
 
 import { AppLayout } from "./components/layout/AppLayout";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
+import { BrandLoading } from './components/common/BrandLoading';
 
 import { AuthProvider, useAuth } from "./features/auth/context/AuthContext";
 
@@ -18,7 +19,7 @@ import { LandingPage } from "./features/landing/LandingPage";
 
 function HomeRoute() {
   const { user, loading } = useAuth();
-  if (loading) return <div role="status" className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-300">Comprobando sesión…</div>;
+  if (loading) return <BrandLoading />;
   return user ? <Navigate to="/dashboard" replace /> : <LandingPage />;
 }
 
@@ -32,14 +33,7 @@ function GuestOnlyRoute() {
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div
-        role="status"
-        className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-300"
-      >
-        Comprobando sesión…
-      </div>
-    );
+    return <BrandLoading />;
   }
 
   if (user) {

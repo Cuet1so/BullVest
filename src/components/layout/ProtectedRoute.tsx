@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { BrandLoading } from '../common/BrandLoading';
 
 import { useAuth } from "../../features/auth/context/AuthContext";
 
@@ -9,19 +10,7 @@ export function ProtectedRoute() {
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-200"
-      >
-        <LoaderCircle
-          className="mr-3 size-6 animate-spin text-emerald-400"
-          aria-hidden="true"
-        />
-        <span>Cargando tu sesión…</span>
-      </div>
-    );
+    return <BrandLoading message="Cargando tu sesión…" />;
   }
 
   if (!user) {

@@ -10,10 +10,18 @@ test('production manifest, icons, metadata and private-data-free offline fallbac
   await expect(page.locator('html')).toHaveAttribute('lang', 'es');
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /BullVest/);
   await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/logo.png');
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /\/og-image\.png$/);
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute('content', /\/og-image\.png$/);
+  const social = await request.get('/og-image.png');
+  expect(social.ok()).toBe(true);
+  const socialPng = await social.body();
+  expect(socialPng.readUInt32BE(16)).toBe(1200);
+  expect(socialPng.readUInt32BE(20)).toBe(630);
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
   const cached = await page.evaluate(async () => {
-    const cache = await caches.open('bullvest-offline-v1'); return (await cache.keys()).map((entry) => new URL(entry.url).pathname).sort();
+    const cache = await caches.open('bullvest-offline-v2'); return (await cache.keys()).map((entry) => new URL(entry.url).pathname).sort();
   });
   expect(cached).toEqual(['/offline.html', '/pwa/icon-192.png', '/pwa/icon-512.png']);
   await context.setOffline(true);

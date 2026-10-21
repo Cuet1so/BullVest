@@ -1,19 +1,38 @@
-// Reproducible brand assets, rendered from vectors with the existing browser tooling.
+// Derive PWA and social assets from the supplied logo, preserving its artwork.
 import { chromium } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import process from 'node:process';
 
+const source = await readFile('public/logo.png').catch(() => {
+  throw new Error('Guarda el logotipo original en public/logo.png antes de ejecutar npm run assets:pwa.');
+});
+const isPng = source.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+const isJpeg = source[0] === 255 && source[1] === 216 && source[2] === 255;
+if (!isPng && !isJpeg) throw new Error('El logotipo debe contener una imagen PNG o JPEG válida.');
+let logo = `data:image/${isPng ? 'png' : 'jpeg'};base64,${source.toString('base64')}`;
 await mkdir('public/pwa', { recursive: true });
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : 'chromium' });
 try {
   const page = await browser.newPage({ deviceScaleFactor: 1 });
-  const logo = '<rect width="512" height="512" fill="#09090b"/><rect x="100" y="100" width="312" height="312" rx="76" fill="#34d399"/><path d="M157 320 L223 254 L275 288 L355 192 M292 192 H355 V255" fill="none" stroke="#09090b" stroke-width="28" stroke-linejoin="round" stroke-linecap="round"/>';
+  if (!isPng) {
+    // Normalize a JPEG supplied with a .png name at its original resolution.
+    logo = await page.evaluate(async (src) => {
+      const img = new Image(); img.src = src; await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      return canvas.toDataURL('image/png');
+    }, logo);
+    await writeFile('public/logo.png', Buffer.from(logo.split(',')[1], 'base64'));
+  }
   for (const size of [180, 192, 512]) {
     await page.setViewportSize({ width: size, height: size });
-    await page.setContent(`<body style="margin:0"><svg width="${size}" height="${size}" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${logo}</svg></body>`);
+    await page.setContent(`<body style="margin:0;background:#192426"><img src="${logo}" alt="BullVest" width="${size}" height="${size}" style="display:block;object-fit:contain" /></body>`);
+    await page.locator('img').evaluate((img) => img.decode());
     await page.screenshot({ path: `public/pwa/${size === 180 ? 'apple-touch-icon' : `icon-${size}`}.png` });
   }
   await page.setViewportSize({ width: 1200, height: 630 });
-  await page.setContent(`<body style="margin:0;background:#09090b;color:#fafafa;font-family:Arial,sans-serif"><main style="padding:64px 80px"><div style="display:flex;align-items:center;gap:24px"><svg width="100" height="100" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${logo}</svg><b style="font-size:42px">BullVest</b></div><h1 style="font-size:68px;line-height:1.12;margin:36px 0 24px">Aprende. Invierte.<br><span style="color:#34d399">Evoluciona.</span></h1><p style="font-size:26px;color:#a1a1aa">Academia · Simulador · Comunidad</p><p style="font-size:18px;color:#71717a;margin-top:36px">Invierte con dinero ficticio. Aprende con experiencia real.</p></main></body>`);
-  await page.screenshot({ path: 'public/og-bullvest.png' });
+  await page.setContent(`<body style="margin:0;background:#192426;color:#fafafa;font-family:Arial,sans-serif"><main style="height:630px;display:flex;align-items:center;gap:36px;padding:36px;box-sizing:border-box"><img src="${logo}" alt="BullVest" width="470" height="470" style="object-fit:contain;flex-shrink:0" /><div><p style="font-size:18px;letter-spacing:4px;color:#d4b15e">EDTECH + WEALTHTECH</p><h1 style="font-size:62px;line-height:1.1;margin:24px 0">Aprende.<br>Practica.<br><span style="color:#34d399">Evoluciona.</span></h1><p style="font-size:22px;color:#cbd5e1">Academia · Simulador · Comunidad</p><p style="font-size:16px;color:#94a3b8">Aprende a invertir con dinero ficticio.</p></div></main></body>`);
+  await page.locator('img').evaluate((img) => img.decode());
+  await page.screenshot({ path: 'public/og-image.png' });
 } finally { await browser.close(); }

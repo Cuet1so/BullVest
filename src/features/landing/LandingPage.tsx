@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BookOpen, ChartNoAxesCombined, Check, ChevronRight, GraduationCap, Heart, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Logo } from '../../components/common/Logo';
 import { useAuth } from '../auth/context/AuthContext';
 import { GoogleSignInButton } from '../auth/components/GoogleSignInButton';
 
@@ -71,7 +72,7 @@ export function LandingPage() {
     <a href="#contenido" className={`sr-only z-50 rounded-lg bg-emerald-400 p-3 font-semibold text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4 ${focus}`}>Saltar al contenido</a>
     <header className="border-b border-zinc-800/80">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-5 py-5 sm:px-8">
-        <Link to="/" aria-label="BullVest, inicio" className={`flex items-center gap-2.5 rounded-lg text-xl font-bold tracking-tight ${focus}`}><span className="rounded-xl bg-emerald-400 p-2 text-zinc-950"><TrendingUp aria-hidden="true" className="size-5" /></span>BullVest<span className="hidden text-xs font-normal tracking-normal text-zinc-500 sm:inline">Aprende. Practica. Evoluciona.</span></Link>
+        <div className="flex items-center gap-3"><Logo size="sm" /><span className="hidden text-xs text-zinc-400 sm:inline">Aprende. Practica. Evoluciona.</span></div>
         <nav aria-label="Navegación pública" className="flex flex-wrap items-center gap-5 text-sm">
           <a href="#metodologia" className={`hidden rounded text-zinc-400 hover:text-white sm:block ${focus}`}>Metodología</a>
           <a href="#planes" className={`rounded text-zinc-300 hover:text-white ${focus}`}>Planes</a>
@@ -93,7 +94,7 @@ export function LandingPage() {
           </div>
           <p className="mt-5 flex items-center gap-2 text-xs text-zinc-400"><ShieldCheck aria-hidden="true" className="size-4 text-emerald-400" /> Empieza sin tarjeta. Practica con dinero ficticio.</p>
         </div>
-        <Preview />
+        <div className="space-y-8"><div className="text-center"><Logo size="lg" /></div><Preview /></div>
       </section>
 
       <section aria-labelledby="features-title" className="border-y border-zinc-800 bg-zinc-900/30">
@@ -138,6 +139,6 @@ export function LandingPage() {
       </section>
     </main>
 
-    <footer className="border-t border-zinc-800 px-5 py-8 sm:px-8"><div className="mx-auto flex max-w-7xl flex-wrap items-start justify-between gap-7"><div><Link to="/" className={`rounded text-lg font-bold ${focus}`}>BullVest<span className="text-emerald-400">.</span></Link><p className="mt-2 max-w-md text-xs leading-6 text-zinc-400">Educación financiera y simulación de inversiones.<br />Las operaciones utilizan dinero ficticio.</p><p className="mt-3 text-xs text-zinc-500">© {new Date().getFullYear()} BullVest</p></div><nav aria-label="Enlaces del pie de página" className="flex flex-wrap gap-6 text-sm text-zinc-400"><a href="#metodologia" className={`rounded hover:text-white ${focus}`}>Metodología</a><a href="#planes" className={`rounded hover:text-white ${focus}`}>Planes</a><Link to="/login" className={`rounded hover:text-white ${focus}`}>Iniciar sesión</Link></nav></div></footer>
+    <footer className="border-t border-zinc-800 px-5 py-8 sm:px-8"><div className="mx-auto flex max-w-7xl flex-wrap items-start justify-between gap-7"><div><Logo size="md" /><p className="mt-2 max-w-md text-xs leading-6 text-zinc-400">Educación financiera y simulación de inversiones.<br />Las operaciones utilizan dinero ficticio.</p><p className="mt-3 text-xs text-zinc-500">© {new Date().getFullYear()} BullVest</p></div><nav aria-label="Enlaces del pie de página" className="flex flex-wrap gap-6 text-sm text-zinc-400"><a href="#metodologia" className={`rounded hover:text-white ${focus}`}>Metodología</a><a href="#planes" className={`rounded hover:text-white ${focus}`}>Planes</a><Link to="/login" className={`rounded hover:text-white ${focus}`}>Iniciar sesión</Link></nav></div></footer>
   </div>;
 }

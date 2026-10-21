@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { AuthError } from "@supabase/supabase-js";
 import { Link } from "react-router-dom";
-import { LoaderCircle, TrendingUp } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
+import { Logo } from '../../../components/common/Logo';
 
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 
@@ -64,15 +65,7 @@ export function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 py-12 text-zinc-100">
       <div className="w-full max-w-md">
-        <Link
-          to="/login"
-          className="mb-10 flex items-center justify-center gap-3 text-2xl font-bold tracking-tight"
-        >
-          <span className="flex size-10 items-center justify-center rounded-xl bg-emerald-400 text-zinc-950">
-            <TrendingUp className="size-6" aria-hidden="true" />
-          </span>
-          BullVest
-        </Link>
+        <div className="mb-8 text-center"><Logo size="lg" /></div>
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-7 shadow-2xl shadow-black/30 sm:p-9">
           <h1 className="text-2xl font-semibold tracking-tight">

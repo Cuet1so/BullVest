@@ -1,5 +1,5 @@
 // Only public offline assets are cached. Account data and mutations always use the network.
-const CACHE = 'bullvest-offline-v1';
+const CACHE = 'bullvest-offline-v2';
 const OFFLINE = '/offline.html';
 const PUBLIC_ASSETS = [OFFLINE, '/pwa/icon-192.png', '/pwa/icon-512.png'];
 self.addEventListener('install', (event) => {
