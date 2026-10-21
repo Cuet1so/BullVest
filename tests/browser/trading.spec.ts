@@ -156,6 +156,12 @@ test('Realtime updates Ask/Bid and spread without reloading the catalog', async 
   } });
   await page.goto('/simulador');
   await expect(page.getByText('Realtime conectado', { exact: true })).toBeVisible();
+  // The socket can subscribe before the initial HTTP snapshot has populated
+  // the chart. Wait for that first observation before asserting a second point.
+  const chart = page.getByTestId('libertex-chart');
+  await expect(page.getByRole('button', { name: 'Actualizar', exact: true })).toBeEnabled();
+  await expect(chart.getByTestId('chart-ask')).toContainText('Ask 100 USD');
+  await expect(chart).toHaveAttribute('data-points', '1');
   const reads = control.ranges.length;
   const firstTick = new Date(Date.now() + 1000).toISOString();
   sendAsset!({ ...assets[0], current_price: 120, sell_price: 118, updated_at: firstTick, price_updated_at: firstTick });
@@ -163,13 +169,13 @@ test('Realtime updates Ask/Bid and spread without reloading the catalog', async 
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('118,00');
   await expect(page.locator('[data-ticker="AAPL"]')).toContainText('1.6667 %');
   await expect(page.getByRole('region', { name: 'Formulario de operaciones' })).toContainText('120,00');
-  const chart = page.getByTestId('libertex-chart');
   await expect(chart.getByTestId('chart-ask')).toContainText('120');
   await expect(chart.getByTestId('chart-bid')).toContainText('118');
   await expect(chart.getByTestId('chart-spread')).toContainText('2 USD');
   await expect(chart.locator('.recharts-reference-line-line')).toHaveCount(3);
   await expect(chart.getByTestId('chart-spread-label')).toContainText('2');
   await expect(chart).toHaveAttribute('data-trend', 'up');
+  await expect(chart).toContainText('+19.598 %');
   for (const period of ['1M', '5M', '15M', '1H', '1D', '1W']) {
     await chart.getByRole('button', { name: period, exact: true }).click();
     await expect(chart.getByRole('button', { name: period, exact: true })).toHaveAttribute('aria-pressed', 'true');

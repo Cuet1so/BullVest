@@ -22,9 +22,9 @@ function SpreadLabel({ viewBox, spread }: LabelProps & { spread: string }) {
   </g>;
 }
 
-function QuoteLabel({ viewBox, text, color, offset }: LabelProps & { text: string; color: string; offset: number }) {
+function QuoteLabel({ viewBox, text, color, verticalOffset }: LabelProps & { text: string; color: string; verticalOffset: number }) {
   if (!viewBox || !('x' in viewBox) || !('y' in viewBox)) return null;
-  return <text x={Number(viewBox.x) + 4} y={Number(viewBox.y) + offset} fill={color} fontSize={10}>{text}</text>;
+  return <text x={Number(viewBox.x) + 4} y={Number(viewBox.y) + verticalOffset} fill={color} fontSize={10}>{text}</text>;
 }
 
 export default function LibertexChart({ asset, ticks, connection }: {
@@ -86,8 +86,8 @@ export default function LibertexChart({ asset, ticks, connection }: {
         <AreaChart data={points} margin={{ top: 25, right: 6, left: 8, bottom: 8 }} accessibilityLayer>
           <defs><linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.4} /><stop offset="100%" stopColor={color} stopOpacity={0.01} /></linearGradient></defs>
           <CartesianGrid stroke="#263244" strokeDasharray="3 5" vertical={false} />
-          <XAxis type="number" dataKey="time" domain={xDomain} tickFormatter={(time: number) => clock(time, period)} tick={{ fill: '#94a3b8', fontSize: 10 }} minTickGap={35} tickLine={false} axisLine={false} />
-          <YAxis orientation="right" domain={domain} width={100} tickFormatter={(value: number) => decimal.format(value)} tick={{ fill: '#64748b', fontSize: 10 }} tickLine={false} axisLine={false} />
+          <XAxis type="number" dataKey="time" domain={xDomain} allowDataOverflow tickFormatter={(time: number) => clock(time, period)} tick={{ fill: '#94a3b8', fontSize: 10 }} minTickGap={35} tickLine={false} axisLine={false} />
+          <YAxis orientation="right" domain={domain} allowDataOverflow width={100} tickFormatter={(value: number) => decimal.format(value)} tick={{ fill: '#64748b', fontSize: 10 }} tickLine={false} axisLine={false} />
           <Tooltip contentStyle={{ background: '#121826', border: '1px solid #475569', borderRadius: 10, color: '#f8fafc', fontSize: 12 }}
             labelFormatter={(value) => new Date(Number(value)).toLocaleString('es-ES')}
             formatter={(value) => [`${decimal.format(Number(value))} ${asset.currency}`, 'Precio medio']}
@@ -95,8 +95,8 @@ export default function LibertexChart({ asset, ticks, connection }: {
           <Area type="monotone" dataKey="mid" stroke={color} strokeWidth={2} fill={`url(#${gradient})`} baseValue={domain[0]} dot={points.length === 1 ? { r: 3, fill: color } : false} activeDot={{ r: 4 }}
             isAnimationActive={!reducedMotion} animationDuration={350} animationEasing="ease-out" />
           {percentage !== null && <>
-            <ReferenceLine y={asset.current_price} stroke="#34d399" strokeDasharray="6 4" label={<QuoteLabel text={`ASK ${decimal.format(asset.current_price)}`} color="#34d399" offset={-7} />} />
-            <ReferenceLine y={asset.sell_price!} stroke="#fb923c" strokeDasharray="6 4" label={<QuoteLabel text={`BID ${decimal.format(asset.sell_price!)}`} color="#fb923c" offset={14} />} />
+            <ReferenceLine y={asset.current_price} stroke="#34d399" strokeDasharray="6 4" label={<QuoteLabel text={`ASK ${decimal.format(asset.current_price)}`} color="#34d399" verticalOffset={-7} />} />
+            <ReferenceLine y={asset.sell_price!} stroke="#fb923c" strokeDasharray="6 4" label={<QuoteLabel text={`BID ${decimal.format(asset.sell_price!)}`} color="#fb923c" verticalOffset={14} />} />
             <ReferenceLine y={(asset.current_price + asset.sell_price!) / 2} stroke="transparent" label={<SpreadLabel spread={decimal.format(spread!)} />} />
           </>}
         </AreaChart>
