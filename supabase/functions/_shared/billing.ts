@@ -3,11 +3,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 
 export { Stripe };
 export class HttpError extends Error {
-  constructor(public status: number, public code: string) { super(code); }
+  constructor(public status: number, public code: string, message = code) { super(message); }
 }
 export function requiredEnv(name: string): string {
-  const value = Deno.env.get(name);
-  if (!value) throw new HttpError(503, 'BILLING_NOT_CONFIGURED');
+  const value = Deno.env.get(name)?.trim();
+  if (!value) throw new HttpError(503, 'BILLING_NOT_CONFIGURED', `Falta configurar ${name} en Supabase Secrets.`);
   return value;
 }
 export function stripeClient() {
@@ -54,12 +54,14 @@ export function billingHandler(
   allowedOrigins?: string,
 ) {
   return async (request: Request): Promise<Response> => {
-    let headers: Record<string, string> = { 'Vary': 'Origin', 'Cache-Control': 'no-store' };
+    const requestId = crypto.randomUUID();
+    let headers: Record<string, string> = { 'Vary': 'Origin', 'Cache-Control': 'no-store', 'X-Request-Id': requestId };
     try {
       const origin = requestOrigin(request, allowedOrigins);
       headers = { ...headers, 'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Expose-Headers': 'X-Request-Id' };
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
       if (request.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED');
       // CORS may be open, but Stripe return URLs still need a concrete HTTP(S) origin.
@@ -70,9 +72,22 @@ export function billingHandler(
       }
       return Response.json(await handler(request, origin), { headers });
     } catch (error) {
-      // Never return Stripe payloads, credentials or user information to the browser/logs.
-      console.error('billing_request_failed', error instanceof HttpError ? error.code : 'UPSTREAM_ERROR');
-      return Response.json({ code: error instanceof HttpError ? error.code : 'BILLING_UNAVAILABLE' }, {
+      const stripeError = error instanceof Stripe.errors.StripeError ? error : null;
+      const code = error instanceof HttpError ? error.code : stripeError ? 'STRIPE_REQUEST_FAILED' : 'BILLING_UNAVAILABLE';
+      // Log selected diagnostics, never the request, headers or complete Stripe objects.
+      const diagnosticMessage = (error instanceof Error ? error.message : 'Unknown upstream error')
+        .replace(/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9_]+\b/g, '[redacted]')
+        .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email redacted]');
+      console.error('billing_request_failed', {
+        request_id: requestId, code, message: diagnosticMessage,
+        stripe_code: stripeError?.code, stripe_type: stripeError?.type,
+        stripe_param: stripeError?.param, stripe_status: stripeError?.statusCode,
+        stripe_request_id: stripeError?.requestId,
+      });
+      return Response.json({ code, request_id: requestId,
+        message: error instanceof HttpError ? error.message : 'No se pudo completar la solicitud de facturación. Contacta con soporte con esta referencia.',
+      }, {
         status: error instanceof HttpError ? error.status : 502, headers,
       });
     }

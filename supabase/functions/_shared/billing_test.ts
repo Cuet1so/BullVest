@@ -1,10 +1,35 @@
-import { authenticatedAccount, billingHandler, grantsPro, isBullVestSubscription, Stripe } from './billing.ts';
+import { authenticatedAccount, billingHandler, grantsPro, isBullVestSubscription, requiredEnv, Stripe } from './billing.ts';
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 function subscription(status: string, invoice: object | null = null): Stripe.Subscription {
   return { status, latest_invoice: invoice, metadata: { supabase_user_id: 'user-a' },
     items: { data: [{ price: { id: 'price_bullvest' } }] } } as unknown as Stripe.Subscription;
 }
+
+Deno.test('billing errors correlate safe browser responses with useful server diagnostics', async () => {
+  const logs: unknown[][] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => { logs.push(args); };
+  try {
+    const handler = billingHandler(() => Promise.reject(new Stripe.errors.StripeInvalidRequestError({
+      message: 'No such price: price_missing; sk_test_doNotLog', code: 'resource_missing',
+      param: 'line_items[0][price]', requestId: 'req_test_diagnostic', statusCode: 400,
+    })), '*');
+    const response = await handler(new Request('https://test', { method: 'POST', headers: { origin: 'https://app.example' } }));
+    const body = await response.json();
+    assert(response.status === 502, 'upstream failure lost status');
+    assert(body.code === 'STRIPE_REQUEST_FAILED', 'Stripe error misclassified');
+    assert(body.request_id === response.headers.get('x-request-id'), 'request correlation missing');
+    const log = JSON.stringify(logs);
+    assert(log.includes('resource_missing') && log.includes('req_test_diagnostic'), 'Stripe diagnostics lost');
+    assert(log.includes('price_missing') && !log.includes('sk_test_doNotLog'), 'message missing or key leaked');
+    assert(!JSON.stringify(body).includes('price_missing'), 'internal Stripe details leaked to user');
+    const missing = billingHandler(() => Promise.resolve(requiredEnv('BULLVEST_MISSING_TEST_CONFIG')), '*');
+    const unavailable = await missing(new Request('https://test', { method: 'POST', headers: { origin: 'https://app.example' } }));
+    assert(unavailable.status === 503, 'missing config lost status');
+    assert((await unavailable.json()).message.includes('BULLVEST_MISSING_TEST_CONFIG'), 'missing config not identified');
+  } finally { console.error = original; }
+});
 
 Deno.test('only paid/active or trialing BullVest subscriptions grant access', () => {
   assert(grantsPro(subscription('active')), 'active rejected');

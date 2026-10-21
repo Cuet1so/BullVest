@@ -5,7 +5,10 @@ const userId = '00000000-0000-4000-8000-000000000007';
 const user = { id: userId, aud: 'authenticated', role: 'authenticated', email: 'billing@example.test', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' };
 async function account(page: Page, lives = 3, pro = false) {
   const control = { lives, pro, refills: 0, forceExhausted: false, profileReads: 0,
-    failProfile: false, profileFailureStatus: 400, failData: false, refillGate: null as Promise<void> | null, loseReceipt: false };
+    failProfile: false, profileFailureStatus: 400, failData: false, refillGate: null as Promise<void> | null, loseReceipt: false,
+    subscriptionStatus: null as string | null, checkoutCalls: 0, portalCalls: 0,
+    checkoutFailure: null as { status: number; body: unknown } | null,
+    portalFailure: null as { status: number; body: unknown } | null, billingOffline: false };
   await page.addInitScript((sessionUser) => {
     localStorage.setItem('sb-zgycwhxwpxbqtivgssml-auth-token', JSON.stringify({
       access_token: 'billing-test-token', refresh_token: 'billing-test-refresh', expires_in: 3600,
@@ -25,7 +28,8 @@ async function account(page: Page, lives = 3, pro = false) {
       control.profileReads++;
       if (control.failProfile) return send({ message: 'Profile unavailable' }, control.profileFailureStatus);
       return send({ id: userId, display_name: 'Ana', role: control.pro ? 'pro' : 'free', fictional_balance: 10000,
-        lives_remaining: control.lives, stripe_customer_id: control.pro ? 'cus_test' : null });
+        lives_remaining: control.lives, stripe_customer_id: control.pro || control.subscriptionStatus ? 'cus_test' : null,
+        stripe_subscription_status: control.subscriptionStatus });
     }
     if (url.pathname === '/functions/v1/refresh-quotes') return send({ refreshed_count: 0 });
     if (['/rest/v1/assets', '/rest/v1/portfolios', '/rest/v1/transactions'].includes(url.pathname)) return control.failData ? send({ message: 'Market unavailable' }, 400) : send([]);
@@ -39,10 +43,17 @@ async function account(page: Page, lives = 3, pro = false) {
       return send([{ reload_id: crypto.randomUUID(), resulting_balance: 10000, remaining_lives: control.lives }]);
     }
     if (url.pathname === '/functions/v1/create-checkout-session') {
+      control.checkoutCalls++;
+      if (control.billingOffline) return route.abort('failed');
+      if (control.checkoutFailure) return send(control.checkoutFailure.body, control.checkoutFailure.status);
       expect(route.request().postDataJSON()).toEqual({ interval: 'monthly' });
       return send({ url: 'https://checkout.stripe.com/c/pay/cs_test_bullvest' });
     }
-    if (url.pathname === '/functions/v1/create-portal-session') return send({ url: 'https://billing.stripe.com/p/session/test_bullvest' });
+    if (url.pathname === '/functions/v1/create-portal-session') {
+      control.portalCalls++;
+      if (control.portalFailure) return send(control.portalFailure.body, control.portalFailure.status);
+      return send({ url: 'https://billing.stripe.com/p/session/test_bullvest' });
+    }
     throw new Error(`Unexpected API request ${url.pathname}`);
   });
   await page.route('https://checkout.stripe.com/**', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Stripe Checkout test</h1>' }));
@@ -177,6 +188,81 @@ test('success page waits for the server and reacts to a delayed webhook', async 
   control.pro = true;
   await expect(page.getByRole('heading', { name: 'Tu plan Pro está activo' })).toBeVisible();
   expect(control.profileReads).toBeGreaterThan(1);
+});
+
+test('billing HTTP errors preserve response details in console and release the button', async ({ page }) => {
+  const control = await account(page);
+  const diagnostics: unknown[] = [];
+  page.on('console', async (message) => {
+    if (message.type() === 'error' && message.text().includes('[Stripe]')) {
+      diagnostics.push(await message.args()[1].jsonValue());
+    }
+  });
+  const body = { code: 'INVALID_PRICE', message: 'El precio configurado no existe', details: 'price unavailable' };
+  control.checkoutFailure = { status: 400, body };
+  await page.goto('/simulador');
+  const button = page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first();
+  await button.click();
+  await expect(page.getByRole('alert')).toContainText('El precio configurado no existe (HTTP 400)');
+  await expect(button).toBeEnabled();
+  await expect.poll(() => diagnostics).toEqual([expect.objectContaining({ function: 'create-checkout-session', status: 400, data: body, message: expect.any(String) })]);
+});
+
+test('portal failures offer recovery without creating another subscription', async ({ page }) => {
+  const control = await account(page, 3, true);
+  control.portalFailure = { status: 502, body: { code: 'STRIPE_REQUEST_FAILED', request_id: 'billing-reference-1' } };
+  await page.goto('/simulador');
+  const button = page.getByRole('button', { name: 'Gestionar suscripción', exact: true });
+  await button.click();
+  await expect(page.getByRole('alert')).toContainText('billing-reference-1');
+  await expect(page.getByRole('alert')).toContainText('Puedes reintentar');
+  await expect(button).toBeEnabled();
+  expect(control.checkoutCalls).toBe(0);
+  control.portalFailure = null;
+  await button.click();
+  await expect(page).toHaveURL('https://billing.stripe.com/p/session/test_bullvest');
+  expect(control.portalCalls).toBe(2);
+});
+
+test('network failures keep the diagnostic and allow an explicit retry', async ({ page }) => {
+  const control = await account(page);
+  control.billingOffline = true;
+  await page.goto('/simulador');
+  const button = page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first();
+  await button.click();
+  await expect(page.getByRole('alert')).toContainText('conexión y la configuración CORS');
+  await expect(button).toBeEnabled();
+  expect(control.checkoutCalls).toBe(1);
+});
+
+for (const status of ['active', 'past_due']) {
+  test(`Free profile with ${status} subscription opens portal`, async ({ page }) => {
+    const control = await account(page);
+    control.subscriptionStatus = status;
+    await page.goto('/simulador');
+    await page.getByRole('button', { name: 'Gestionar suscripción', exact: true }).click();
+    await expect(page).toHaveURL('https://billing.stripe.com/p/session/test_bullvest');
+    expect(control.checkoutCalls).toBe(0);
+  });
+}
+
+test('canceled subscription with stale Pro role can open Checkout', async ({ page }) => {
+  const control = await account(page, 3, true);
+  control.subscriptionStatus = 'canceled';
+  await page.goto('/simulador');
+  await page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first().click();
+  await expect(page).toHaveURL('https://checkout.stripe.com/c/pay/cs_test_bullvest');
+  expect(control.portalCalls).toBe(0);
+});
+
+test('server subscription conflict redirects stale Free profile to portal once', async ({ page }) => {
+  const control = await account(page);
+  control.checkoutFailure = { status: 409, body: { code: 'SUBSCRIPTION_EXISTS' } };
+  await page.goto('/simulador');
+  await page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first().click();
+  await expect(page).toHaveURL('https://billing.stripe.com/p/session/test_bullvest');
+  expect(control.checkoutCalls).toBe(1);
+  expect(control.portalCalls).toBe(1);
 });
 
 for (const path of ['/login', '/register']) {

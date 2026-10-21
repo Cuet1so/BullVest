@@ -12,7 +12,8 @@ Deno.serve(billingHandler(async (request, origin) => {
   const prices = priceIds();
   const price = payload.interval === 'annual' ? prices[1] : prices[0];
   if (!price) throw new HttpError(400, 'ANNUAL_PLAN_UNAVAILABLE');
-  if (profile.role === 'pro') throw new HttpError(409, 'SUBSCRIPTION_EXISTS');
+  // Stripe's subscription state below is authoritative, including after cancellation
+  // when a delayed webhook has not updated the local Pro role yet.
   const stripe = stripeClient();
   let customerId: string | null = profile.stripe_customer_id;
   if (!customerId) {
