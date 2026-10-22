@@ -68,3 +68,9 @@ Un `try/catch` alrededor de `stripe.checkout.sessions.create` convierte `StripeI
 Validación local: las 10 pruebas de facturación (incluidos nueve casos del portal), Deno check y Deno lint pasan. La prueba de Checkout verifica que no se envían los parámetros incompatibles, que se conserva la idempotencia y que un rechazo de opciones produce JSON 400 sin revelar claves.
 
 Desplegada únicamente `create-checkout-session`, versión 18 ACTIVE, con `verify_jwt = false` y validación interna de Auth. Portal permanece en versión 13 y las demás funciones conservan sus versiones anteriores. Comprobaciones remotas desde el origen de producción: OPTIONS 204 y POST sin sesión 401 con JSON, CORS y `request_id`. Sigue pendiente la creación de una sesión de Checkout con un usuario autenticado; las comprobaciones anónimas no validan la aceptación de los parámetros por Stripe.
+
+## Referencia pendiente: 32418f1a-2a8f-4b16-a878-484ab4b1f843
+
+El usuario sigue recibiendo `STRIPE_REQUEST_FAILED` con HTTP 400 en Checkout v18. El frontend priorizaba el texto genérico de ese código y ocultaba en pantalla el mensaje depurado enviado por el backend; ahora muestra ese detalle junto con el estado HTTP y la referencia. Si la respuesta carece de detalle, conserva el mensaje genérico. Los errores de transporte y las reglas de redirección no cambian.
+
+La consulta de esta referencia mediante la API administrativa de logs no permitió recuperar la causa: `logs.all` devuelve 410 y el endpoint vigente `logs` devuelve un error de backend incluso para una consulta mínima. La versión 18 sigue ACTIVE. Se necesita el JSON de respuesta de la petición autenticada (campos `error`, `message`, `request_id`), sin cabeceras de autorización ni cookies. No se ha atribuido este rechazo a un precio, cliente o ajuste concreto de Stripe sin ese detalle.

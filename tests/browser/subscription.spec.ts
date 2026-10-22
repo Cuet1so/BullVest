@@ -209,6 +209,24 @@ test('billing HTTP errors preserve response details in console and release the b
   await expect.poll(() => diagnostics).toEqual([expect.objectContaining({ function: 'create-checkout-session', status: 400, data: body, message: expect.any(String) })]);
 });
 
+test('Stripe option failures show the server detail and reference instead of only a generic message', async ({ page }) => {
+  const control = await account(page);
+  control.checkoutFailure = { status: 400, body: {
+    code: 'STRIPE_REQUEST_FAILED', error: 'The configured price cannot be used for this Checkout session.',
+    message: 'The configured price cannot be used for this Checkout session.', request_id: 'checkout-diagnostic-test',
+  } };
+  await page.goto('/simulador');
+  const button = page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first();
+  await button.click();
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Stripe rechazó la solicitud: The configured price cannot be used for this Checkout session.');
+  await expect(alert).toContainText('HTTP 400');
+  await expect(alert).toContainText('checkout-diagnostic-test');
+  await expect(button).toBeEnabled();
+  expect(control.checkoutCalls).toBe(1);
+  expect(control.portalCalls).toBe(0);
+});
+
 test('portal failures offer recovery without creating another subscription', async ({ page }) => {
   const control = await account(page, 3, true);
   control.portalFailure = { status: 502, body: { code: 'STRIPE_REQUEST_FAILED', request_id: 'billing-reference-1' } };

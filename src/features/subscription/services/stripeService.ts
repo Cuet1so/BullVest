@@ -71,7 +71,10 @@ async function billingFailure(name: string, error: unknown, data: unknown, respo
   });
   const serverMessage = [fields.message, fields.error, nested.message, fields.details, payload].find((value) => typeof value === 'string' && value.trim());
   const transport = error instanceof FunctionsFetchError || error instanceof FunctionsRelayError;
-  const message = (code && messages[code]) || (typeof serverMessage === 'string' ? serverMessage : transport
+  // The billing handler already redacts Stripe diagnostics; do not hide them behind the generic code.
+  const stripeDetail = code === 'STRIPE_REQUEST_FAILED' && typeof serverMessage === 'string' && serverMessage !== code
+    ? `Stripe rechazó la solicitud: ${serverMessage}` : undefined;
+  const message = stripeDetail || (code && messages[code]) || (typeof serverMessage === 'string' ? serverMessage : transport
     ? `No se pudo contactar con la función ${name}. Comprueba la conexión y la configuración CORS. ${originalMessage}`
     : originalMessage);
   const reference = typeof fields.request_id === 'string' ? ` Referencia: ${fields.request_id}.` : '';
