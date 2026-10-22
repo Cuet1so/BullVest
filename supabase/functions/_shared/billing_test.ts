@@ -6,7 +6,7 @@ function subscription(status: string, invoice: object | null = null): Stripe.Sub
     items: { data: [{ price: { id: 'price_bullvest' } }] } } as unknown as Stripe.Subscription;
 }
 
-Deno.test('Checkout overrides account-default Managed Payments and preserves card filtering and idempotency', async () => {
+Deno.test('Checkout uses dynamic payment methods and returns safe HTTP 400 for rejected options', async () => {
   const environment: Record<string, string> = {
     STRIPE_SECRET_KEY: 'sk_test_fixture', STRIPE_PRICE_ID: 'price_test',
     SUPABASE_URL: 'https://billing.example.test', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
@@ -15,8 +15,11 @@ Deno.test('Checkout overrides account-default Managed Payments and preserves car
   const previous = Object.fromEntries(Object.keys(environment).map((name) => [name, Deno.env.get(name)]));
   const originalFetch = globalThis.fetch;
   const originalServe = Deno.serve;
+  const originalConsoleError = console.error;
+  const logs: unknown[][] = [];
   let handler: ((request: Request) => Promise<Response>) | undefined;
   let checkoutRequests = 0;
+  let rejectOptions = false;
   const unexpected: string[] = [];
   try {
     for (const [name, value] of Object.entries(environment)) Deno.env.set(name, value);
@@ -37,15 +40,16 @@ Deno.test('Checkout overrides account-default Managed Payments and preserves car
         if (request.method === 'POST' && url.pathname === '/v1/checkout/sessions') {
           checkoutRequests++;
           const params = new URLSearchParams(await request.text());
-          // Model the real account's default: the card filter is rejected unless explicitly opted out.
-          if (params.has('allowed_payment_method_types[0]') && params.get('managed_payments[enabled]') !== 'false') {
-            return Response.json({ error: { type: 'invalid_request_error', message: 'allowed_payment_method_types cannot be used with Managed Payments' } }, { status: 400 });
-          }
-          assert(params.get('allowed_payment_method_types[0]') === 'card', 'card filter changed');
+          assert(![...params.keys()].some((key) => /^(allowed_payment_method_types|payment_method_types|managed_payments|automatic_payment_methods)(\[|$)/.test(key)),
+            'Checkout must use dashboard payment methods without unsupported or conflicting options');
           assert(params.get('mode') === 'subscription', 'subscription mode changed');
           assert(params.get('line_items[0][price]') === 'price_test', 'wrong subscription price');
           assert(params.get('customer') === 'cus_test', 'existing customer was not reused');
           assert(request.headers.get('idempotency-key') === 'bullvest-checkout-attempt-test', 'checkout idempotency changed');
+          if (rejectOptions) return Response.json({ error: {
+            type: 'invalid_request_error', code: 'parameter_unknown', param: 'option_test',
+            message: 'Unknown parameter: option_test; sk_test_doNotLog',
+          } }, { status: 400, headers: { 'request-id': 'req_test_checkout' } });
           return Response.json({ id: 'cs_test', status: 'open', url: 'https://checkout.stripe.com/c/pay/cs_test' });
         }
       }
@@ -63,7 +67,23 @@ Deno.test('Checkout overrides account-default Managed Payments and preserves car
     assert(body.url === 'https://checkout.stripe.com/c/pay/cs_test', 'Checkout URL missing');
     assert(checkoutRequests === 1 && unexpected.length === 0, 'unexpected outbound requests');
     assert(response.headers.get('access-control-allow-origin') === 'https://app.example', 'Checkout response lost CORS');
+    rejectOptions = true;
+    console.error = (...args: unknown[]) => { logs.push(args); };
+    const rejected = await handler(new Request('https://billing.example.test/functions/v1/create-checkout-session', {
+      method: 'POST', headers: { origin: 'https://app.example', authorization: 'Bearer test-user-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ interval: 'monthly' }),
+    }));
+    const failure = await rejected.json();
+    assert(rejected.status === 400 && failure.code === 'STRIPE_REQUEST_FAILED', 'Stripe option rejection must return HTTP 400');
+    assert(failure.error.includes('option_test') && failure.error === failure.message, 'Stripe error message lost');
+    assert(failure.request_id === rejected.headers.get('x-request-id'), 'request correlation lost');
+    assert(rejected.headers.get('access-control-allow-origin') === 'https://app.example', 'Stripe rejection lost CORS');
+    const diagnostics = JSON.stringify(logs);
+    assert(diagnostics.includes('req_test_checkout') && diagnostics.includes('parameter_unknown'), 'wrapped Stripe diagnostics lost');
+    assert(!JSON.stringify(failure).includes('sk_test_doNotLog') && !diagnostics.includes('sk_test_doNotLog'), 'Stripe error leaked a secret');
+    assert(Number(checkoutRequests) === 2 && unexpected.length === 0, 'option rejection triggered duplicate requests');
   } finally {
+    console.error = originalConsoleError;
     globalThis.fetch = originalFetch;
     Object.defineProperty(Deno, 'serve', { value: originalServe, configurable: true });
     for (const [name, value] of Object.entries(previous)) {

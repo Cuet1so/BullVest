@@ -3,7 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 
 export { Stripe };
 export class HttpError extends Error {
-  constructor(public status: number, public code: string, message = code) { super(message); }
+  constructor(public status: number, public code: string, message = code, cause?: unknown) { super(message, { cause }); }
 }
 export function requiredEnv(name: string): string {
   const value = Deno.env.get(name)?.trim();
@@ -80,7 +80,8 @@ export function billingHandler(
       }
       return Response.json(await handler(request, origin), { headers });
     } catch (error) {
-      const stripeError = error instanceof Stripe.errors.StripeError ? error : null;
+      const stripeError = error instanceof Stripe.errors.StripeError ? error
+        : error instanceof HttpError && error.cause instanceof Stripe.errors.StripeError ? error.cause : null;
       const code = error instanceof HttpError ? error.code : stripeError ? 'STRIPE_REQUEST_FAILED' : 'BILLING_UNAVAILABLE';
       // Log selected diagnostics, never the request, headers or complete Stripe objects.
       const errorMessage = error instanceof Error ? error.message

@@ -35,9 +35,9 @@ Referencias: [errores de Edge Functions](https://supabase.com/docs/guides/functi
 
 La prueba autenticada de «Pasar a Pro» devolvió `STRIPE_REQUEST_FAILED`, referencia `123932ad-2120-4664-94c9-a9dadddc86fa`: Stripe rechaza `allowed_payment_method_types` cuando Managed Payments está habilitado por defecto en la cuenta. El parámetro es válido; el conflicto es con esa modalidad. El HTTP observado por el usuario no quedó determinado (400 o 500); el handler actual convierte las excepciones de Stripe en HTTP 500.
 
-Checkout envía ahora `managed_payments: { enabled: false }`, manteniendo `allowed_payment_method_types: ['card']`. Esto opta por Checkout estándar para la sesión y la suscripción resultante; no modifica el valor global de la cuenta. Se conserva la clave de idempotencia y la reutilización de sesiones abiertas. Portal no necesita cambios para este error.
+La primera corrección enviaba `managed_payments: { enabled: false }`, manteniendo `allowed_payment_method_types: ['card']`. Optaba por Checkout estándar para la sesión y la suscripción resultante sin modificar el valor global de la cuenta. Esta solución queda sustituida por la selección dinámica descrita al final del documento. Se conserva la clave de idempotencia y la reutilización de sesiones abiertas.
 
-La prueba de regresión ejecuta el handler real con Supabase y el transporte de Stripe simulados: reproduce el rechazo antes de la corrección y comprueba la URL de Checkout, el filtro de tarjeta, cliente, precio, idempotencia y CORS tras aplicarla. No equivale a una operación real en Stripe.
+La prueba de regresión ejecuta el handler real con Supabase y el transporte de Stripe simulados. La versión inicial reproducía el rechazo y comprobaba el filtro de tarjeta; la actual comprueba la selección dinámica, cliente, precio, idempotencia, CORS y la respuesta HTTP 400 ante opciones rechazadas. No equivale a una operación real en Stripe.
 
 Pendiente de despliegue y validación autenticada. Desplegar únicamente Checkout con acceso administrativo autorizado:
 
@@ -58,3 +58,13 @@ El frontend inicia Checkout para perfiles Free, incluso si conservan informació
 Validación local: 10 pruebas de facturación correctas (incluidos nueve escenarios del portal), 20 pruebas de navegador de suscripciones correctas con API simulada, build, ESLint, Deno check y Deno lint correctos. Persiste el aviso de tamaño del bundle de Vite.
 
 Estos cambios requieren publicar el frontend y desplegar `create-portal-session`. La apertura real del portal con una sesión autenticada sigue pendiente de verificación.
+
+## Checkout con selección dinámica de métodos
+
+La creación de sesiones omite `allowed_payment_method_types`, `payment_method_types` y `managed_payments`, utilizando los métodos habilitados y elegibles según la configuración de Stripe. No se envía `automatic_payment_methods`: es una opción de Payment Intents, no de `checkout.sessions.create`. La [guía oficial de métodos dinámicos](https://docs.stripe.com/payments/payment-methods/dynamic-payment-methods) indica que Checkout debe omitir la lista de métodos, mientras que las integraciones con Payment Intents pueden utilizar `automatic_payment_methods`. La [referencia de creación de Checkout](https://docs.stripe.com/api/checkout/sessions/create) y el SDK Stripe 23.0.0 instalado no admiten esa propiedad.
+
+Un `try/catch` alrededor de `stripe.checkout.sessions.create` convierte `StripeInvalidRequestError` en HTTP 400 con `code: STRIPE_REQUEST_FAILED`, `error`, `message` y `request_id`. El handler común depura el mensaje, añade CORS y conserva los diagnósticos originales de Stripe mediante la causa del error. Los errores inesperados siguen devolviendo HTTP 500.
+
+Validación local: las 10 pruebas de facturación (incluidos nueve casos del portal), Deno check y Deno lint pasan. La prueba de Checkout verifica que no se envían los parámetros incompatibles, que se conserva la idempotencia y que un rechazo de opciones produce JSON 400 sin revelar claves.
+
+Desplegada únicamente `create-checkout-session`, versión 18 ACTIVE, con `verify_jwt = false` y validación interna de Auth. Portal permanece en versión 13 y las demás funciones conservan sus versiones anteriores. Comprobaciones remotas desde el origen de producción: OPTIONS 204 y POST sin sesión 401 con JSON, CORS y `request_id`. Sigue pendiente la creación de una sesión de Checkout con un usuario autenticado; las comprobaciones anónimas no validan la aceptación de los parámetros por Stripe.
