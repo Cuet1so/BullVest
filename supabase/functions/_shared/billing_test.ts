@@ -6,6 +6,72 @@ function subscription(status: string, invoice: object | null = null): Stripe.Sub
     items: { data: [{ price: { id: 'price_bullvest' } }] } } as unknown as Stripe.Subscription;
 }
 
+Deno.test('Checkout overrides account-default Managed Payments and preserves card filtering and idempotency', async () => {
+  const environment: Record<string, string> = {
+    STRIPE_SECRET_KEY: 'sk_test_fixture', STRIPE_PRICE_ID: 'price_test',
+    SUPABASE_URL: 'https://billing.example.test', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
+    APP_ALLOWED_ORIGINS: 'https://app.example',
+  };
+  const previous = Object.fromEntries(Object.keys(environment).map((name) => [name, Deno.env.get(name)]));
+  const originalFetch = globalThis.fetch;
+  const originalServe = Deno.serve;
+  let handler: ((request: Request) => Promise<Response>) | undefined;
+  let checkoutRequests = 0;
+  const unexpected: string[] = [];
+  try {
+    for (const [name, value] of Object.entries(environment)) Deno.env.set(name, value);
+    // Capture the real Edge Function handler without starting a listener.
+    Object.defineProperty(Deno, 'serve', { value: (callback: typeof handler) => { handler = callback; }, configurable: true });
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
+      if (url.origin === environment.SUPABASE_URL) {
+        if (url.pathname === '/auth/v1/user') return Response.json({ id: 'user-a', email: 'test@example.test' });
+        if (url.pathname === '/rest/v1/profiles') return Response.json({ id: 'user-a', role: 'free', stripe_customer_id: 'cus_test' });
+        if (url.pathname === '/rest/v1/rpc/reserve_stripe_checkout') return Response.json('attempt-test');
+      }
+      if (url.origin === 'https://api.stripe.com') {
+        if (request.method === 'GET' && ['/v1/subscriptions', '/v1/checkout/sessions'].includes(url.pathname)) {
+          return Response.json({ object: 'list', data: [], has_more: false });
+        }
+        if (request.method === 'POST' && url.pathname === '/v1/checkout/sessions') {
+          checkoutRequests++;
+          const params = new URLSearchParams(await request.text());
+          // Model the real account's default: the card filter is rejected unless explicitly opted out.
+          if (params.has('allowed_payment_method_types[0]') && params.get('managed_payments[enabled]') !== 'false') {
+            return Response.json({ error: { type: 'invalid_request_error', message: 'allowed_payment_method_types cannot be used with Managed Payments' } }, { status: 400 });
+          }
+          assert(params.get('allowed_payment_method_types[0]') === 'card', 'card filter changed');
+          assert(params.get('mode') === 'subscription', 'subscription mode changed');
+          assert(params.get('line_items[0][price]') === 'price_test', 'wrong subscription price');
+          assert(params.get('customer') === 'cus_test', 'existing customer was not reused');
+          assert(request.headers.get('idempotency-key') === 'bullvest-checkout-attempt-test', 'checkout idempotency changed');
+          return Response.json({ id: 'cs_test', status: 'open', url: 'https://checkout.stripe.com/c/pay/cs_test' });
+        }
+      }
+      unexpected.push(`${request.method} ${url.origin}${url.pathname}`);
+      return Response.json({ error: { type: 'invalid_request_error', message: 'Unexpected test request' } }, { status: 400 });
+    };
+    await import('../create-checkout-session/index.ts');
+    assert(handler, 'Edge Function handler was not registered');
+    const response = await handler(new Request('https://billing.example.test/functions/v1/create-checkout-session', {
+      method: 'POST', headers: { origin: 'https://app.example', authorization: 'Bearer test-user-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ interval: 'monthly' }),
+    }));
+    const body = await response.json();
+    assert(response.status === 200, `Checkout rejected: ${JSON.stringify(body)}`);
+    assert(body.url === 'https://checkout.stripe.com/c/pay/cs_test', 'Checkout URL missing');
+    assert(checkoutRequests === 1 && unexpected.length === 0, 'unexpected outbound requests');
+    assert(response.headers.get('access-control-allow-origin') === 'https://app.example', 'Checkout response lost CORS');
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(Deno, 'serve', { value: originalServe, configurable: true });
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) Deno.env.delete(name); else Deno.env.set(name, value);
+    }
+  }
+});
+
 Deno.test('billing errors correlate safe browser responses with useful server diagnostics', async () => {
   const logs: unknown[][] = [];
   const original = console.error;

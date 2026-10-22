@@ -54,6 +54,8 @@ Deno.serve(billingHandler(async (request, origin) => {
     cancel_url: `${origin}/dashboard?checkout=canceled`,
     metadata: { supabase_user_id: user.id, price_id: price, origin },
     subscription_data: { metadata: { supabase_user_id: user.id } },
+    // Keep standard card subscriptions even when the account defaults to Managed Payments.
+    managed_payments: { enabled: false },
     allowed_payment_method_types: ['card'],
   }, {
     // Simultaneous requests with the same account cannot create separate sessions.

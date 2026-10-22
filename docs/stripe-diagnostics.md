@@ -30,3 +30,19 @@ No se pudo consultar el historial de logs mediante el conector por falta de perm
 Tras publicar, un fallo registra `[Stripe] Edge Function falló` en DevTools. Su `requestId` permite localizar `billing_request_failed` en los logs de la función correspondiente. Si Stripe devuelve un error de configuración, comprobar allí su `stripe_code`, `stripe_param` y `stripe_request_id`; comprobar el precio recurrente `STRIPE_PRICE_ID` y la activación del Customer Portal en el mismo modo test/live que la clave secreta.
 
 Referencias: [errores de Edge Functions](https://supabase.com/docs/guides/functions/error-handling), [creación de Checkout Sessions](https://docs.stripe.com/api/checkout/sessions/create).
+
+## Conflicto con Managed Payments — 2026-10-22
+
+La prueba autenticada de «Pasar a Pro» devolvió `STRIPE_REQUEST_FAILED`, referencia `123932ad-2120-4664-94c9-a9dadddc86fa`: Stripe rechaza `allowed_payment_method_types` cuando Managed Payments está habilitado por defecto en la cuenta. El parámetro es válido; el conflicto es con esa modalidad. El HTTP observado por el usuario no quedó determinado (400 o 500); el handler actual convierte las excepciones de Stripe en HTTP 500.
+
+Checkout envía ahora `managed_payments: { enabled: false }`, manteniendo `allowed_payment_method_types: ['card']`. Esto opta por Checkout estándar para la sesión y la suscripción resultante; no modifica el valor global de la cuenta. Se conserva la clave de idempotencia y la reutilización de sesiones abiertas. Portal no necesita cambios para este error.
+
+La prueba de regresión ejecuta el handler real con Supabase y el transporte de Stripe simulados: reproduce el rechazo antes de la corrección y comprueba la URL de Checkout, el filtro de tarjeta, cliente, precio, idempotencia y CORS tras aplicarla. No equivale a una operación real en Stripe.
+
+Pendiente de despliegue y validación autenticada. Desplegar únicamente Checkout con acceso administrativo autorizado:
+
+```sh
+npx supabase functions deploy create-checkout-session --project-ref zgycwhxwpxbqtivgssml --use-api
+```
+
+Después, repetir «Pasar a Pro» y comprobar que la función devuelve una URL de Checkout. Si aparece un nuevo error, conservar su JSON y `request_id`; no rotar claves de idempotencia ni crear suscripciones alternativas para eludirlo.
