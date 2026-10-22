@@ -6,21 +6,24 @@
 - Las suscripciones canceladas/expiradas pueden iniciar Checkout aunque el rol Pro esté pendiente de actualizar. Las suscripciones existentes, incluidas las pendientes de pago, abren el portal. Si Checkout devuelve `SUBSCRIPTION_EXISTS`, se intenta el portal una sola vez.
 - Los fallos del portal permiten reintentar y contactar con soporte; no crean otra suscripción automáticamente. Los botones salen del estado de carga incluso ante rechazos de red.
 - `VITE_STRIPE_PUBLISHABLE_KEY` se valida al iniciar el flujo: debe tener formato `pk_test_*` o `pk_live_*`. No se imprime su valor. Si falta/es inválida se avisa en consola, pero la redirección al Checkout/Portal alojado sigue disponible, pues usa la URL devuelta por el servidor y no Stripe.js. Configurar esta variable en Vercel requiere recompilar el frontend.
-- Las Edge Functions generan `request_id`, lo exponen con CORS y registran mensaje/código/parámetro/request ID de Stripe en el servidor sin volcar objetos completos, cabeceras ni claves. Los detalles internos de Stripe permanecen en los logs del servidor.
+- Ambas Edge Functions validan `STRIPE_SECRET_KEY` y `STRIPE_PRICE_ID` antes de acceder a Supabase/Stripe. Una variable ausente, vacía o en blanco devuelve HTTP 500 con `error`, `message`, `code` y `request_id`. OPTIONS se atiende antes de esta validación con HTTP 204.
+- El catch global devuelve HTTP 500 para excepciones inesperadas o de Stripe, con el mensaje original depurado en `error` y `message` y cabeceras CORS para orígenes permitidos. Se mantienen los 4xx explícitos de autenticación, método, origen y conflictos. Claves y correos se ocultan tanto en la respuesta como en los logs. El servidor registra además código/parámetro/request ID de Stripe sin volcar objetos completos ni cabeceras.
 
 ## Verificaciones
 
 - `npm run build` y `npm run lint`: correctos. Persiste el aviso de Vite por el tamaño del bundle principal.
 - `npm run test:subscription`: 17 pruebas de navegador correctas con Supabase/Stripe simulados.
-- `npm run test:billing`: 6 pruebas correctas, incluyendo CORS, autenticación, firmas y diagnóstico con ocultación de claves.
+- `npm run test:billing`: 8 pruebas correctas, incluyendo variables ausentes/vacías, preflight sin secretos, excepciones, CORS, autenticación, firmas y diagnóstico con ocultación de claves.
 - `deno check`: correcto para Checkout y Portal. `deno lint --rules-exclude=no-import-prefix`: correcto; el repositorio utiliza imports `npm:` con versiones explícitas.
 - Despliegue ejecutado: `npx supabase functions deploy create-checkout-session create-portal-session --project-ref zgycwhxwpxbqtivgssml --use-api`.
-- Versiones activas verificadas: Checkout 13 y Portal 9. Ambas validan el JWT mediante `auth.getUser` dentro del handler.
+- Versiones activas verificadas tras el último despliegue: Checkout 16 y Portal 12. Ambas validan el JWT mediante `auth.getUser` dentro del handler.
 - Pruebas reales contra ambos endpoints desde los orígenes `https://bull-vest.vercel.app` y `http://localhost:5173`: OPTIONS 204 con CORS actualizado; POST sin sesión devuelve 401 y un `request_id` coincidente entre cuerpo y cabecera.
 
 ## Alcance y diagnóstico pendiente
 
 Los nombres `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` y `APP_ALLOWED_ORIGINS` existen en Supabase Secrets; no se han leído ni validado sus valores. La clave pública de Stripe no estaba definida en los archivos locales de entorno inspeccionados. La presencia de secretos no demuestra que el precio o el portal estén configurados correctamente en Stripe.
+
+Tras desplegar la validación temprana, los POST sin sesión a ambas funciones desde el origen de producción devolvieron 401 con `error: UNAUTHORIZED`, CORS y referencia correlacionada. Esto confirma que las dos variables requeridas no están vacías en el runtime desplegado; no demuestra que Stripe acepte sus valores. Los errores 500 de configuración se comprobaron en pruebas locales, sin modificar los secretos de producción. Un 502 generado por la infraestructura antes de ejecutar el handler requiere revisar los logs de arranque; cambiar el catch no puede interceptarlo.
 
 No se pudo consultar el historial de logs mediante el conector por falta de permisos. No se ha reproducido el fallo original con una sesión real ni completado un pago. El cambio del frontend está en el workspace y debe publicarse en Vercel para mostrar los nuevos diagnósticos en producción; las funciones de Supabase sí están desplegadas.
 

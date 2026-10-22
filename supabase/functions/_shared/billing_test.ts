@@ -1,4 +1,4 @@
-import { authenticatedAccount, billingHandler, grantsPro, isBullVestSubscription, requiredEnv, Stripe } from './billing.ts';
+import { authenticatedAccount, billingHandler, grantsPro, isBullVestSubscription, requiredEnv, Stripe, validateBillingEnvironment } from './billing.ts';
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 function subscription(status: string, invoice: object | null = null): Stripe.Subscription {
@@ -17,18 +17,67 @@ Deno.test('billing errors correlate safe browser responses with useful server di
     })), '*');
     const response = await handler(new Request('https://test', { method: 'POST', headers: { origin: 'https://app.example' } }));
     const body = await response.json();
-    assert(response.status === 502, 'upstream failure lost status');
+    assert(response.status === 500, 'upstream failure must return a controlled HTTP 500');
     assert(body.code === 'STRIPE_REQUEST_FAILED', 'Stripe error misclassified');
     assert(body.request_id === response.headers.get('x-request-id'), 'request correlation missing');
     const log = JSON.stringify(logs);
     assert(log.includes('resource_missing') && log.includes('req_test_diagnostic'), 'Stripe diagnostics lost');
     assert(log.includes('price_missing') && !log.includes('sk_test_doNotLog'), 'message missing or key leaked');
-    assert(!JSON.stringify(body).includes('price_missing'), 'internal Stripe details leaked to user');
+    assert(body.error.includes('price_missing'), 'original error detail missing');
+    assert(body.error === body.message && !JSON.stringify(body).includes('sk_test_doNotLog'), 'error contract broken or key leaked');
+    assert(response.headers.get('access-control-allow-origin') === 'https://app.example', 'error response lost CORS');
     const missing = billingHandler(() => Promise.resolve(requiredEnv('BULLVEST_MISSING_TEST_CONFIG')), '*');
     const unavailable = await missing(new Request('https://test', { method: 'POST', headers: { origin: 'https://app.example' } }));
-    assert(unavailable.status === 503, 'missing config lost status');
+    assert(unavailable.status === 500, 'missing config lost status');
     assert((await unavailable.json()).message.includes('BULLVEST_MISSING_TEST_CONFIG'), 'missing config not identified');
   } finally { console.error = original; }
+});
+
+Deno.test('billing validates missing and blank Stripe environment before business logic but after preflight', async () => {
+  const names = ['STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID'];
+  const previous = names.map((name) => Deno.env.get(name));
+  let calls = 0;
+  const handler = billingHandler(() => {
+    validateBillingEnvironment();
+    calls++;
+    return Promise.resolve({ ok: true });
+  }, 'https://app.example');
+  const request = (method: string) => new Request('https://test', { method, headers: { origin: 'https://app.example' } });
+  try {
+    for (const [secret, price] of [[undefined, undefined], ['', 'price_test'], ['sk_test_fixture', '   ']]) {
+      for (const [index, value] of [secret, price].entries()) {
+        if (value === undefined) Deno.env.delete(names[index]); else Deno.env.set(names[index], value);
+      }
+      const preflight = await handler(request('OPTIONS'));
+      assert(preflight.status === 204 && calls === 0, 'preflight requires Stripe configuration or ran business logic');
+      assert(preflight.headers.get('access-control-allow-origin') === 'https://app.example', 'preflight missing CORS');
+      const response = await handler(request('POST'));
+      const body = await response.json();
+      assert(response.status === 500 && calls === 0, 'missing environment reached business logic');
+      assert(body.error.includes('Falta STRIPE_SECRET_KEY o STRIPE_PRICE_ID'), 'missing descriptive error');
+      assert(body.code === 'BILLING_NOT_CONFIGURED', 'missing configuration error code');
+      assert(response.headers.get('access-control-allow-origin') === 'https://app.example', 'config failure missing CORS');
+    }
+    Deno.env.set(names[0], 'sk_test_fixture'); Deno.env.set(names[1], 'price_test');
+    const response = await handler(request('POST'));
+    assert(response.status === 200 && Number(calls) === 1, 'valid config rejected');
+  } finally {
+    names.forEach((name, index) => {
+      if (previous[index] === undefined) Deno.env.delete(name); else Deno.env.set(name, previous[index]!);
+    });
+  }
+});
+
+Deno.test('global catch handles errors, rejected objects and strings with JSON and CORS', async () => {
+  for (const failure of [new Error('Stripe unavailable'), { message: 'Database unavailable' }, 'Network unavailable']) {
+    const handler = billingHandler(() => Promise.reject(failure), '*');
+    const response = await handler(new Request('https://test', { method: 'POST', headers: { origin: 'https://app.example' } }));
+    const body = await response.json();
+    assert(response.status === 500, 'unexpected exception escaped as a gateway failure');
+    assert(body.error === (typeof failure === 'string' ? failure : failure.message), 'exception detail discarded');
+    assert(response.headers.get('content-type')?.includes('application/json'), 'missing JSON content type');
+    assert(response.headers.get('access-control-allow-origin') === 'https://app.example', 'exception lost CORS');
+  }
 });
 
 Deno.test('only paid/active or trialing BullVest subscriptions grant access', () => {

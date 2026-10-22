@@ -7,8 +7,16 @@ export class HttpError extends Error {
 }
 export function requiredEnv(name: string): string {
   const value = Deno.env.get(name)?.trim();
-  if (!value) throw new HttpError(503, 'BILLING_NOT_CONFIGURED', `Falta configurar ${name} en Supabase Secrets.`);
+  if (!value) throw new HttpError(500, 'BILLING_NOT_CONFIGURED', `Falta configurar ${name} en Supabase Secrets.`);
   return value;
+}
+
+export function validateBillingEnvironment(): void {
+  const missing = ['STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID'].filter((name) => !Deno.env.get(name)?.trim());
+  if (missing.length > 0) {
+    throw new HttpError(500, 'BILLING_NOT_CONFIGURED',
+      `Falta STRIPE_SECRET_KEY o STRIPE_PRICE_ID en las variables de entorno. Variables ausentes: ${missing.join(', ')}.`);
+  }
 }
 export function stripeClient() {
   return new Stripe(requiredEnv('STRIPE_SECRET_KEY'), {
@@ -75,8 +83,13 @@ export function billingHandler(
       const stripeError = error instanceof Stripe.errors.StripeError ? error : null;
       const code = error instanceof HttpError ? error.code : stripeError ? 'STRIPE_REQUEST_FAILED' : 'BILLING_UNAVAILABLE';
       // Log selected diagnostics, never the request, headers or complete Stripe objects.
-      const diagnosticMessage = (error instanceof Error ? error.message : 'Unknown upstream error')
+      const errorMessage = error instanceof Error ? error.message
+        : typeof error === 'string' ? error
+        : error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message
+        : 'Error desconocido al procesar la solicitud de facturación.';
+      const diagnosticMessage = errorMessage
         .replace(/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9_]+\b/g, '[redacted]')
+        .replace(/\b(?:whsec_|sb_secret_)[A-Za-z0-9_-]+\b/g, '[redacted]')
         .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
         .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email redacted]');
       console.error('billing_request_failed', {
@@ -86,9 +99,9 @@ export function billingHandler(
         stripe_request_id: stripeError?.requestId,
       });
       return Response.json({ code, request_id: requestId,
-        message: error instanceof HttpError ? error.message : 'No se pudo completar la solicitud de facturación. Contacta con soporte con esta referencia.',
+        error: diagnosticMessage, message: diagnosticMessage,
       }, {
-        status: error instanceof HttpError ? error.status : 502, headers,
+        status: error instanceof HttpError ? error.status : 500, headers,
       });
     }
   };
