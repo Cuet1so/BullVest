@@ -25,8 +25,9 @@ export class BillingError extends Error {
   }
 }
 
-// Recover unpaid subscriptions in the portal instead of creating duplicates.
+// Free users enter Checkout; Stripe can still report an existing subscription.
 export function shouldOpenPortal(profile: Pick<Profile, 'role' | 'stripe_subscription_id' | 'stripe_subscription_status'>): boolean {
+  if (profile.role === 'free') return false;
   const status = profile.stripe_subscription_status;
   if (status === 'canceled' || status === 'incomplete_expired') return false;
   return !!status || !!profile.stripe_subscription_id || profile.role === 'pro';
@@ -77,7 +78,7 @@ async function billingFailure(name: string, error: unknown, data: unknown, respo
   return new BillingError(`${message}${status ? ` (HTTP ${status})` : ''}${reference}`, code, status, error);
 }
 
-async function redirectToStripe(name: string, body: Record<string, string>, hostname: string): Promise<void> {
+async function redirectToStripe(name: string, body: Record<string, string>, hostname: string): Promise<'checkout_required' | void> {
   validatePublishableKey();
   let result;
   try {
@@ -89,6 +90,7 @@ async function redirectToStripe(name: string, body: Record<string, string>, host
   if (error) throw await billingFailure(name, error, data, response);
   const payload = record(data);
   if (payload.error || payload.code) throw await billingFailure(name, new Error('La función devolvió un error'), data, response);
+  if (name === 'create-portal-session' && payload.action === 'checkout_required') return 'checkout_required';
   let url: URL;
   try {
     url = new URL(typeof payload.url === 'string' ? payload.url : '');
@@ -100,15 +102,25 @@ async function redirectToStripe(name: string, body: Record<string, string>, host
 }
 
 // Hosted Checkout redirects directly to session.url; Stripe.js is installed for future embedded UI.
-export async function startCheckoutSession(interval: BillingInterval = 'monthly'): Promise<void> {
+async function checkout(interval: BillingInterval, allowPortal: boolean): Promise<void> {
   try {
     await redirectToStripe('create-checkout-session', { interval }, 'checkout.stripe.com');
   } catch (error) {
     // Stripe is authoritative when the profile/webhook has not caught up yet.
-    if (error instanceof BillingError && error.code === 'SUBSCRIPTION_EXISTS') return openCustomerPortal();
+    if (allowPortal && error instanceof BillingError && error.code === 'SUBSCRIPTION_EXISTS') return portal(interval, false);
     throw error;
   }
 }
-export function openCustomerPortal(): Promise<void> {
-  return redirectToStripe('create-portal-session', {}, 'billing.stripe.com');
+async function portal(interval: BillingInterval, allowCheckout: boolean): Promise<void> {
+  const action = await redirectToStripe('create-portal-session', {}, 'billing.stripe.com');
+  if (action === 'checkout_required') {
+    if (!allowCheckout) throw new BillingError('El estado de tu suscripción ha cambiado. Actualiza tu perfil y vuelve a intentarlo.', 'BILLING_STATE_CONFLICT');
+    return checkout(interval, false);
+  }
+}
+export function startCheckoutSession(interval: BillingInterval = 'monthly'): Promise<void> {
+  return checkout(interval, true);
+}
+export function openCustomerPortal(interval: BillingInterval = 'monthly'): Promise<void> {
+  return portal(interval, true);
 }

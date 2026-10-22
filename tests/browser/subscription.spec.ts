@@ -8,7 +8,7 @@ async function account(page: Page, lives = 3, pro = false) {
     failProfile: false, profileFailureStatus: 400, failData: false, refillGate: null as Promise<void> | null, loseReceipt: false,
     subscriptionStatus: null as string | null, checkoutCalls: 0, portalCalls: 0,
     checkoutFailure: null as { status: number; body: unknown } | null,
-    portalFailure: null as { status: number; body: unknown } | null, billingOffline: false };
+    portalFailure: null as { status: number; body: unknown } | null, checkoutRequired: false, billingOffline: false };
   await page.addInitScript((sessionUser) => {
     localStorage.setItem('sb-zgycwhxwpxbqtivgssml-auth-token', JSON.stringify({
       access_token: 'billing-test-token', refresh_token: 'billing-test-refresh', expires_in: 3600,
@@ -52,6 +52,7 @@ async function account(page: Page, lives = 3, pro = false) {
     if (url.pathname === '/functions/v1/create-portal-session') {
       control.portalCalls++;
       if (control.portalFailure) return send(control.portalFailure.body, control.portalFailure.status);
+      if (control.checkoutRequired) return send({ action: 'checkout_required' });
       return send({ url: 'https://billing.stripe.com/p/session/test_bullvest' });
     }
     throw new Error(`Unexpected API request ${url.pathname}`);
@@ -236,13 +237,40 @@ test('network failures keep the diagnostic and allow an explicit retry', async (
 });
 
 for (const status of ['active', 'past_due']) {
-  test(`Free profile with ${status} subscription opens portal`, async ({ page }) => {
+  test(`Free profile with ${status} subscription enters Checkout and handles the server conflict`, async ({ page }) => {
     const control = await account(page);
     control.subscriptionStatus = status;
+    control.checkoutFailure = { status: 409, body: { code: 'SUBSCRIPTION_EXISTS' } };
     await page.goto('/simulador');
-    await page.getByRole('button', { name: 'Gestionar suscripción', exact: true }).click();
+    await page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first().click();
     await expect(page).toHaveURL('https://billing.stripe.com/p/session/test_bullvest');
-    expect(control.checkoutCalls).toBe(0);
+    expect(control.checkoutCalls).toBe(1);
+    expect(control.portalCalls).toBe(1);
+  });
+}
+
+test('portal checkout_required opens Checkout for a stale Pro profile', async ({ page }) => {
+  const control = await account(page, 3, true);
+  control.checkoutRequired = true;
+  await page.goto('/simulador');
+  await page.getByRole('button', { name: 'Gestionar suscripción', exact: true }).click();
+  await expect(page).toHaveURL('https://checkout.stripe.com/c/pay/cs_test_bullvest');
+  expect(control.portalCalls).toBe(1);
+  expect(control.checkoutCalls).toBe(1);
+});
+
+for (const pro of [false, true]) {
+  test(`contradictory billing responses stop after one handoff from ${pro ? 'Portal' : 'Checkout'}`, async ({ page }) => {
+    const control = await account(page, 3, pro);
+    control.checkoutRequired = true;
+    control.checkoutFailure = { status: 409, body: { code: 'SUBSCRIPTION_EXISTS' } };
+    await page.goto('/simulador');
+    const button = page.getByRole('button', { name: pro ? 'Gestionar suscripción' : 'Pasar a Pro', exact: true }).first();
+    await button.click();
+    await expect(page.getByRole('alert')).toContainText(pro ? 'Ya tienes una suscripción' : 'El estado de tu suscripción ha cambiado');
+    await expect(button).toBeEnabled();
+    expect(control.portalCalls).toBe(1);
+    expect(control.checkoutCalls).toBe(1);
   });
 }
 

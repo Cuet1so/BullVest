@@ -14,10 +14,11 @@ export function SubscriptionActions({ compact = false }: { compact?: boolean }) 
   async function run(portal: boolean) {
     if (busy.current) return;
     busy.current = true; setPending(true); setError(null);
-    try { await (portal ? openCustomerPortal() : startCheckoutSession(interval)); }
+    const usePortal = portal && profile?.role !== 'free';
+    try { await (usePortal ? openCustomerPortal(interval) : startCheckoutSession(interval)); }
     catch (failure) {
       const message = failure instanceof Error ? failure.message : 'No se pudo abrir Stripe.';
-      setError(portal ? `${message} Puedes reintentar Gestionar suscripción; si persiste, contacta con soporte.` : message);
+      setError(usePortal ? `${message} Puedes reintentar Gestionar suscripción; si persiste, contacta con soporte.` : message);
     } finally {
       busy.current = false; setPending(false);
     }
@@ -33,7 +34,7 @@ export function SubscriptionActions({ compact = false }: { compact?: boolean }) 
       {pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Crown className="size-4" aria-hidden="true" />}
       {pending ? 'Abriendo Stripe…' : usePortal ? 'Gestionar suscripción' : 'Pasar a Pro'}
     </button>
-    {!usePortal && profile?.stripe_customer_id && <button type="button" disabled={pending} onClick={() => void run(true)} className="mt-2 text-xs text-zinc-400 underline disabled:opacity-50">Gestionar suscripción</button>}
+    {!usePortal && profile?.role !== 'free' && profile?.stripe_customer_id && <button type="button" disabled={pending} onClick={() => void run(true)} className="mt-2 text-xs text-zinc-400 underline disabled:opacity-50">Gestionar suscripción</button>}
     {error && <p role="alert" className="mt-2 text-xs text-rose-300">{error}</p>}
   </div>;
 }

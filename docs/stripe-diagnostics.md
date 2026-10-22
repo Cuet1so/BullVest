@@ -46,3 +46,15 @@ npx supabase functions deploy create-checkout-session --project-ref zgycwhxwpxbq
 ```
 
 Después, repetir «Pasar a Pro» y comprobar que la función devuelve una URL de Checkout. Si aparece un nuevo error, conservar su JSON y `request_id`; no rotar claves de idempotencia ni crear suscripciones alternativas para eludirlo.
+
+## Portal para perfiles sin cliente — 2026-10-22
+
+`create-portal-session` consulta el perfil del usuario validado por Supabase Auth. Si es Free y no tiene `stripe_customer_id`, devuelve HTTP 200 con `{ "action": "checkout_required" }` sin crear recursos en Stripe. Si es Pro, crea el cliente con el correo de Auth y `metadata.user_id`, usando una clave de idempotencia por usuario. Guarda el ID únicamente mientras la columna siga siendo NULL y vuelve a leer el perfil para utilizar el cliente persistido si otra petición ganó la carrera. Un fallo de escritura o lectura impide abrir el portal.
+
+Cuando el cliente ya existe, se utiliza directamente para crear la sesión del portal con retorno al dashboard del origen permitido. El `try/catch` compartido de `billingHandler` conserva las respuestas JSON depuradas, CORS y `request_id`; los errores de Stripe o persistencia devuelven 500 y se mantienen los errores explícitos de autenticación y validación.
+
+El frontend inicia Checkout para perfiles Free, incluso si conservan información de una suscripción anterior. Si Checkout confirma `SUBSCRIPTION_EXISTS`, abre el portal una sola vez. Una respuesta satisfactoria del portal con `checkout_required` inicia Checkout; un error del portal sigue mostrándose sin iniciar una compra. Cada acción permite como máximo un cambio de destino: respuestas contradictorias muestran un error recuperable y nunca generan un bucle Checkout/Portal.
+
+Validación local: 10 pruebas de facturación correctas (incluidos nueve escenarios del portal), 20 pruebas de navegador de suscripciones correctas con API simulada, build, ESLint, Deno check y Deno lint correctos. Persiste el aviso de tamaño del bundle de Vite.
+
+Estos cambios requieren publicar el frontend y desplegar `create-portal-session`. La apertura real del portal con una sesión autenticada sigue pendiente de verificación.
