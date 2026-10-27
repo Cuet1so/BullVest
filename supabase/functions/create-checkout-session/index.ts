@@ -1,4 +1,4 @@
-import { authenticatedAccount, billingHandler, HttpError, priceIds, Stripe, stripeClient, validateBillingEnvironment } from '../_shared/billing.ts';
+import { authenticatedAccount, billingHandler, checkoutIdempotencyKey, HttpError, priceIds, Stripe, stripeClient, validateBillingEnvironment } from '../_shared/billing.ts';
 
 Deno.serve(billingHandler(async (request, origin) => {
   validateBillingEnvironment();
@@ -47,28 +47,18 @@ Deno.serve(billingHandler(async (request, origin) => {
   });
   if (reservationError?.message === 'CHECKOUT_ALREADY_OPEN') throw new HttpError(409, 'CHECKOUT_ALREADY_OPEN');
   if (reservationError || !requestId) throw new HttpError(500, 'BILLING_UNAVAILABLE');
-  let session: Stripe.Checkout.Session;
-  try {
-    // Checkout selects payment methods dynamically when no method filter is sent.
-    // automatic_payment_methods is a PaymentIntent option, not a Checkout option.
-    session = await stripe.checkout.sessions.create({
-      mode: 'subscription', customer: customerId, client_reference_id: user.id,
-      line_items: [{ price, quantity: 1 }],
-      success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/dashboard?checkout=canceled`,
-      metadata: { supabase_user_id: user.id, price_id: price, origin },
-      subscription_data: { metadata: { supabase_user_id: user.id } },
-    }, {
-      // Simultaneous requests with the same account cannot create separate sessions.
-      idempotencyKey: `bullvest-checkout-${requestId}`,
-    });
-  } catch (error) {
-    if (error instanceof Stripe.errors.StripeInvalidRequestError) {
-      // billingHandler serializes this as HTTP 400 with redaction, CORS and request_id.
-      throw new HttpError(400, 'STRIPE_REQUEST_FAILED', error.message, error);
-    }
-    throw error;
-  }
+  // Omit all payment-method overrides; inherit the account's Dashboard settings.
+  const params: Stripe.Checkout.SessionCreateParams = {
+    mode: 'subscription', customer: customerId, client_reference_id: user.id,
+    line_items: [{ price, quantity: 1 }],
+    success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/dashboard?checkout=canceled`,
+    metadata: { supabase_user_id: user.id, price_id: price, origin },
+    subscription_data: { metadata: { supabase_user_id: user.id } },
+  };
+  const session = await stripe.checkout.sessions.create(params, {
+    idempotencyKey: await checkoutIdempotencyKey(requestId, params),
+  });
   if (!session.url || session.status !== 'open') throw new HttpError(409, 'CHECKOUT_ALREADY_COMPLETED');
   return { url: session.url };
 }));

@@ -32,6 +32,15 @@ export function priceIds(): string[] {
   return [requiredEnv('STRIPE_PRICE_ID'), Deno.env.get('STRIPE_ANNUAL_PRICE_ID')].filter((id): id is string => !!id);
 }
 
+export async function checkoutIdempotencyKey(attemptId: string, params: Stripe.Checkout.SessionCreateParams): Promise<string> {
+  // reserve_stripe_checkout persists a random UUID per logical attempt. Keep it
+  // across concurrent calls/retries, but never reuse a key with a changed payload.
+  // A fresh namespace also isolates requests made by older deployed handlers.
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(params)));
+  const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `bullvest-checkout-v2-${attemptId}-${fingerprint}`;
+}
+
 export function requestOrigin(
   request: Request,
   allowedOrigins = Deno.env.get('APP_ALLOWED_ORIGINS') || '',
@@ -102,7 +111,10 @@ export function billingHandler(
       return Response.json({ code, request_id: requestId,
         error: diagnosticMessage, message: diagnosticMessage,
       }, {
-        status: error instanceof HttpError ? error.status : 500, headers,
+        status: error instanceof HttpError ? error.status
+          : stripeError instanceof Stripe.errors.StripeInvalidRequestError ? 400
+          : stripeError instanceof Stripe.errors.StripeIdempotencyError ? 409
+          : 500, headers,
       });
     }
   };

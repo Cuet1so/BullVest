@@ -7,7 +7,7 @@ const messages: Record<string, string> = {
   BILLING_NOT_CONFIGURED: 'Los pagos aún no están configurados. Inténtalo más tarde.',
   UNAUTHORIZED: 'Tu sesión ha caducado. Vuelve a iniciar sesión.',
   SUBSCRIPTION_EXISTS: 'Ya tienes una suscripción. Utiliza Gestionar suscripción para revisarla.',
-  CUSTOMER_NOT_FOUND: 'Todavía no tienes una cuenta de facturación en Stripe.',
+  CUSTOMER_NOT_FOUND: 'No se ha podido vincular tu cuenta de facturación. Contacta con soporte para recuperar el acceso a tu suscripción.',
   ANNUAL_PLAN_UNAVAILABLE: 'El plan anual todavía no está disponible.',
   CHECKOUT_ALREADY_OPEN: 'Ya hay un pago pendiente con otro plan. Completa o espera a que expire antes de cambiarlo.',
   CHECKOUT_ALREADY_COMPLETED: 'Este pago ya se ha procesado. Actualiza tu perfil o revisa tu suscripción.',
@@ -77,7 +77,8 @@ async function billingFailure(name: string, error: unknown, data: unknown, respo
   const message = stripeDetail || (code && messages[code]) || (typeof serverMessage === 'string' ? serverMessage : transport
     ? `No se pudo contactar con la función ${name}. Comprueba la conexión y la configuración CORS. ${originalMessage}`
     : originalMessage);
-  const reference = typeof fields.request_id === 'string' ? ` Referencia: ${fields.request_id}.` : '';
+  const requestId = typeof fields.request_id === 'string' ? fields.request_id : context?.headers.get('x-request-id');
+  const reference = requestId ? ` Referencia: ${requestId}.` : '';
   return new BillingError(`${message}${status ? ` (HTTP ${status})` : ''}${reference}`, code, status, error);
 }
 

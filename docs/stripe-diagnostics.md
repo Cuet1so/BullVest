@@ -1,5 +1,7 @@
 # Diagnóstico de Checkout y Portal — 2026-10-21
 
+> Estado actualizado: consultar la [auditoría y corrección del 27 de octubre](auditoria-pagos-2026-10-27.md). Se confirmó divergencia del Checkout desplegado, se corrigió la idempotencia y el Portal ya no crea clientes vacíos para reparar vínculos de suscripción. Las secciones siguientes conservan el historial de diagnósticos anteriores.
+
 ## Cambios
 
 - `stripeService.ts` registra la función, el mensaje original, HTTP status, JSON/texto de respuesta y referencia de petición antes de mostrar la alerta. Conserva la causa original y limita la invocación a 20 segundos.

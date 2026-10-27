@@ -7,7 +7,7 @@ async function account(page: Page, lives = 3, pro = false) {
   const control = { lives, pro, refills: 0, forceExhausted: false, profileReads: 0,
     failProfile: false, profileFailureStatus: 400, failData: false, refillGate: null as Promise<void> | null, loseReceipt: false,
     subscriptionStatus: null as string | null, checkoutCalls: 0, portalCalls: 0,
-    checkoutFailure: null as { status: number; body: unknown } | null,
+    checkoutFailure: null as { status: number; body: unknown; headers?: Record<string, string> } | null,
     portalFailure: null as { status: number; body: unknown } | null, checkoutRequired: false, billingOffline: false };
   await page.addInitScript((sessionUser) => {
     localStorage.setItem('sb-zgycwhxwpxbqtivgssml-auth-token', JSON.stringify({
@@ -45,7 +45,8 @@ async function account(page: Page, lives = 3, pro = false) {
     if (url.pathname === '/functions/v1/create-checkout-session') {
       control.checkoutCalls++;
       if (control.billingOffline) return route.abort('failed');
-      if (control.checkoutFailure) return send(control.checkoutFailure.body, control.checkoutFailure.status);
+      if (control.checkoutFailure) return route.fulfill({ status: control.checkoutFailure.status,
+        contentType: 'application/json', body: JSON.stringify(control.checkoutFailure.body), headers: control.checkoutFailure.headers });
       expect(route.request().postDataJSON()).toEqual({ interval: 'monthly' });
       return send({ url: 'https://checkout.stripe.com/c/pay/cs_test_bullvest' });
     }
@@ -241,6 +242,31 @@ test('portal failures offer recovery without creating another subscription', asy
   await button.click();
   await expect(page).toHaveURL('https://billing.stripe.com/p/session/test_bullvest');
   expect(control.portalCalls).toBe(2);
+});
+
+test('missing Pro billing link shows an actionable error without starting Checkout', async ({ page }) => {
+  const control = await account(page, 3, true);
+  control.portalFailure = { status: 409, body: { code: 'CUSTOMER_NOT_FOUND', request_id: 'missing-link-test' } };
+  await page.goto('/simulador');
+  const button = page.getByRole('button', { name: 'Gestionar suscripción', exact: true });
+  await button.click();
+  await expect(page.getByRole('alert')).toContainText('Contacta con soporte para recuperar el acceso a tu suscripción.');
+  await expect(page.getByRole('alert')).toContainText('missing-link-test');
+  await expect(button).toBeEnabled();
+  expect(control.checkoutCalls).toBe(0);
+  expect(control.portalCalls).toBe(1);
+});
+
+test('Stripe error uses the response header reference when the body omits it', async ({ page }) => {
+  const control = await account(page);
+  control.checkoutFailure = { status: 400, body: { code: 'STRIPE_REQUEST_FAILED', error: 'Invalid price' },
+    headers: { 'x-request-id': 'header-reference-test', 'access-control-expose-headers': 'x-request-id' } };
+  await page.goto('/simulador');
+  const button = page.getByRole('button', { name: 'Pasar a Pro', exact: true }).first();
+  await button.click();
+  await expect(page.getByRole('alert')).toContainText('Stripe rechazó la solicitud: Invalid price (HTTP 400)');
+  await expect(page.getByRole('alert')).toContainText('header-reference-test');
+  await expect(button).toBeEnabled();
 });
 
 test('network failures keep the diagnostic and allow an explicit retry', async ({ page }) => {

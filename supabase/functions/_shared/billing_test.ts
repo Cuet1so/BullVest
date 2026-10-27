@@ -1,4 +1,4 @@
-import { authenticatedAccount, billingHandler, grantsPro, isBullVestSubscription, requiredEnv, Stripe, validateBillingEnvironment } from './billing.ts';
+import { authenticatedAccount, billingHandler, checkoutIdempotencyKey, grantsPro, isBullVestSubscription, requiredEnv, Stripe, validateBillingEnvironment } from './billing.ts';
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 function subscription(status: string, invoice: object | null = null): Stripe.Subscription {
@@ -45,7 +45,7 @@ Deno.test('Checkout uses dynamic payment methods and returns safe HTTP 400 for r
           assert(params.get('mode') === 'subscription', 'subscription mode changed');
           assert(params.get('line_items[0][price]') === 'price_test', 'wrong subscription price');
           assert(params.get('customer') === 'cus_test', 'existing customer was not reused');
-          assert(request.headers.get('idempotency-key') === 'bullvest-checkout-attempt-test', 'checkout idempotency changed');
+          assert(/^bullvest-checkout-v2-attempt-test-[a-f0-9]{64}$/.test(request.headers.get('idempotency-key') || ''), 'checkout key lacks attempt/payload identity');
           if (rejectOptions) return Response.json({ error: {
             type: 'invalid_request_error', code: 'parameter_unknown', param: 'option_test',
             message: 'Unknown parameter: option_test; sk_test_doNotLog',
@@ -92,9 +92,25 @@ Deno.test('Checkout uses dynamic payment methods and returns safe HTTP 400 for r
   }
 });
 
-Deno.test('Portal repairs Pro customer links, directs Free users to Checkout and contains failures', async (t) => {
-  const environment: Record<string, string> = {
-    STRIPE_SECRET_KEY: 'sk_test_fixture', STRIPE_PRICE_ID: 'price_test',
+Deno.test('Checkout keys isolate attempts and payload changes while preserving retry idempotency', async () => {
+  const params: Stripe.Checkout.SessionCreateParams = {
+    mode: 'subscription', customer: 'cus_fixture', line_items: [{ price: 'price_fixture', quantity: 1 }],
+    success_url: 'https://app.example/checkout/success', cancel_url: 'https://app.example/dashboard',
+  };
+  const attempt = crypto.randomUUID();
+  const key = await checkoutIdempotencyKey(attempt, params);
+  const concurrent = await Promise.all(Array.from({ length: 4 }, () => checkoutIdempotencyKey(attempt, { ...params })));
+  assert(concurrent.every((candidate) => candidate === key), 'retries/concurrent calls can create duplicate sessions');
+  assert(await checkoutIdempotencyKey(crypto.randomUUID(), params) !== key, 'new attempt reused an old key');
+  for (const change of [{ customer: 'cus_other' }, { success_url: 'https://other.example/success' }, { line_items: [{ price: 'price_annual', quantity: 1 }] }]) {
+    assert(await checkoutIdempotencyKey(attempt, { ...params, ...change }) !== key, 'changed payload reused a Stripe key');
+  }
+  assert(key.length <= 255 && !key.includes('cus_fixture'), 'key exceeds Stripe limits or exposes parameters');
+});
+
+Deno.test('Portal handles missing links without creating customers and needs no Checkout price', async (t) => {
+  const environment: Record<string, string | undefined> = {
+    STRIPE_SECRET_KEY: 'sk_test_fixture', STRIPE_PRICE_ID: undefined,
     SUPABASE_URL: 'https://billing.example.test', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
     APP_ALLOWED_ORIGINS: 'https://app.example',
   };
@@ -103,84 +119,65 @@ Deno.test('Portal repairs Pro customer links, directs Free users to Checkout and
   const originalServe = Deno.serve;
   let handler: ((request: Request) => Promise<Response>) | undefined;
   try {
-    for (const [name, value] of Object.entries(environment)) Deno.env.set(name, value);
+    for (const [name, value] of Object.entries(environment)) {
+      if (value === undefined) Deno.env.delete(name); else Deno.env.set(name, value);
+    }
     Object.defineProperty(Deno, 'serve', { value: (callback: typeof handler) => { handler = callback; }, configurable: true });
     await import('../create-portal-session/index.ts');
     assert(handler, 'Portal handler was not registered');
     const portalHandler = handler;
     for (const scenario of [
       { name: 'Free without customer', role: 'free', customer: null, expected: 200 },
-      { name: 'Pro without customer', role: 'pro', customer: null, expected: 200 },
+      { name: 'Pro without customer', role: 'pro', customer: null, expected: 409 },
+      { name: 'Free with a broken subscription link', role: 'free', customer: null, subscription: 'sub_existing', expected: 409 },
+      { name: 'Admin without customer', role: 'admin', customer: null, expected: 409 },
       { name: 'Pro with customer', role: 'pro', customer: 'cus_existing', expected: 200 },
       { name: 'Free with customer', role: 'free', customer: 'cus_existing', expected: 200 },
-      { name: 'concurrent customer link wins', role: 'pro', customer: null, winner: 'cus_concurrent', expected: 200 },
-      { name: 'customer creation fails', role: 'pro', customer: null, fail: 'customer', expected: 500 },
-      { name: 'profile update fails', role: 'pro', customer: null, fail: 'update', expected: 500 },
-      { name: 'profile reread fails', role: 'pro', customer: null, fail: 'read', expected: 500 },
-      { name: 'Stripe portal fails', role: 'pro', customer: 'cus_existing', fail: 'portal', expected: 500 },
+      { name: 'Stripe portal rejects configuration', role: 'pro', customer: 'cus_existing', fail: true, expected: 400 },
     ]) {
       await t.step(scenario.name, async () => {
-        let savedCustomer: string | null = scenario.customer;
-        let created = 0, updated = 0, portals = 0, reads = 0;
+        let portals = 0;
         const unexpected: string[] = [];
         globalThis.fetch = async (input, init) => {
           const request = new Request(input, init);
           const url = new URL(request.url);
-          const stripeFailure = () => Response.json({ error: { type: 'invalid_request_error', message: 'Stripe fixture failure' } }, { status: 400 });
-          if (url.origin === environment.SUPABASE_URL) {
+          if (url.origin === environment.SUPABASE_URL && request.method === 'GET') {
             if (url.pathname === '/auth/v1/user') return Response.json({ id: 'user-a', email: 'test@example.test' });
             if (url.pathname === '/rest/v1/profiles') {
               assert(url.searchParams.get('id') === 'eq.user-a', 'profile access used an untrusted user ID');
-              if (request.method === 'PATCH') {
-                updated++;
-                assert(url.searchParams.get('stripe_customer_id') === 'is.null', 'existing customer could be overwritten');
-                assert((await request.json()).stripe_customer_id === 'cus_new', 'wrong customer persisted');
-                if (scenario.fail === 'update') return Response.json({ message: 'Write failed' }, { status: 400 });
-                savedCustomer = scenario.winner ?? 'cus_new';
-                return new Response(null, { status: 204 });
-              }
-              reads++;
-              if (reads > 1 && scenario.fail === 'read') return Response.json({ message: 'Read failed' }, { status: 400 });
-              return Response.json({ id: 'user-a', role: scenario.role, stripe_customer_id: savedCustomer });
+              return Response.json({ id: 'user-a', role: scenario.role,
+                stripe_customer_id: scenario.customer, stripe_subscription_id: scenario.subscription ?? null });
             }
           }
-          if (url.origin === 'https://api.stripe.com' && request.method === 'POST') {
+          if (url.origin === 'https://api.stripe.com' && request.method === 'POST' && url.pathname === '/v1/billing_portal/sessions') {
+            portals++;
             const params = new URLSearchParams(await request.text());
-            if (url.pathname === '/v1/customers') {
-              created++;
-              assert(params.get('metadata[user_id]') === 'user-a', 'customer is not associated with the authenticated user');
-              assert(params.get('email') === 'test@example.test', 'email did not come from Auth');
-              assert(request.headers.get('idempotency-key') === 'bullvest-portal-customer-user-a', 'customer creation is not idempotent');
-              return scenario.fail === 'customer' ? stripeFailure() : Response.json({ id: 'cus_new' });
-            }
-            if (url.pathname === '/v1/billing_portal/sessions') {
-              portals++;
-              assert(params.get('customer') === savedCustomer, 'portal did not use the persisted customer');
-              assert(params.get('return_url') === 'https://app.example/dashboard', 'portal return URL is incorrect');
-              return scenario.fail === 'portal' ? stripeFailure() : Response.json({ url: 'https://billing.stripe.com/p/session/test' });
-            }
+            assert([...params.keys()].sort().join(',') === 'customer,return_url', 'Portal sent unexpected parameters');
+            assert(params.get('customer') === scenario.customer, 'portal did not use the persisted customer');
+            assert(params.get('return_url') === 'https://app.example/dashboard', 'portal return URL is incorrect');
+            return scenario.fail
+              ? Response.json({ error: { type: 'invalid_request_error', message: 'Configure the portal in Stripe' } }, { status: 400 })
+              : Response.json({ url: 'https://billing.stripe.com/p/session/test' });
           }
           unexpected.push(`${request.method} ${url.origin}${url.pathname}`);
-          return stripeFailure();
+          return Response.json({ error: { type: 'invalid_request_error', message: 'Unexpected call' } }, { status: 400 });
         };
         const response = await portalHandler(new Request('https://billing.example.test/functions/v1/create-portal-session', {
           method: 'POST', headers: { origin: 'https://app.example', authorization: 'Bearer test-user-token', 'content-type': 'application/json' },
-          body: JSON.stringify({ user_id: 'another-user', email: 'untrusted@example.test' }),
+          body: JSON.stringify({ user_id: 'another-user', customer: 'cus_untrusted' }),
         }));
         const body = await response.json();
         assert(response.status === scenario.expected, `Unexpected response: ${JSON.stringify(body)}`);
-        assert(unexpected.length === 0, 'unexpected outbound request');
+        assert(unexpected.length === 0, 'Portal attempted to create a customer, mutate a profile or make an unexpected call');
         assert(response.headers.get('access-control-allow-origin') === 'https://app.example', 'Portal lost CORS');
-        if (scenario.fail) {
-          assert(body.request_id === response.headers.get('x-request-id') && typeof body.error === 'string', 'missing structured error');
-          assert(body.code === (['customer', 'portal'].includes(scenario.fail) ? 'STRIPE_REQUEST_FAILED' : scenario.fail === 'read' ? 'CUSTOMER_NOT_FOUND' : 'BILLING_UNAVAILABLE'), 'wrong error classification');
-          assert(portals === (scenario.fail === 'portal' ? 1 : 0), 'portal opened after an earlier failure');
-        } else if (scenario.role === 'free' && !scenario.customer) {
-          assert(body.action === 'checkout_required', 'Free user was not directed to Checkout');
-          assert(created === 0 && updated === 0 && portals === 0, 'Free user caused Stripe side effects');
+        assert(portals === (scenario.customer ? 1 : 0), 'Portal opened without a linked customer');
+        if (scenario.expected !== 200) {
+          assert(body.request_id === response.headers.get('x-request-id'), 'missing error correlation');
+          assert(body.code === (scenario.fail ? 'STRIPE_REQUEST_FAILED' : 'CUSTOMER_NOT_FOUND'), 'wrong error classification');
+        } else if (!scenario.customer) {
+          assert(body.action === 'checkout_required', 'new Free user was not directed to Checkout');
         } else {
-          assert(body.url === 'https://billing.stripe.com/p/session/test' && portals === 1, 'portal URL missing');
-          assert(created === (scenario.customer ? 0 : 1) && updated === created, 'customer was recreated or not linked');
+          assert(body.url === 'https://billing.stripe.com/p/session/test', 'portal URL missing');
         }
       });
     }
@@ -204,7 +201,7 @@ Deno.test('billing errors correlate safe browser responses with useful server di
     })), '*');
     const response = await handler(new Request('https://test', { method: 'POST', headers: { origin: 'https://app.example' } }));
     const body = await response.json();
-    assert(response.status === 500, 'upstream failure must return a controlled HTTP 500');
+    assert(response.status === 400, 'invalid Stripe requests must return a controlled HTTP 400');
     assert(body.code === 'STRIPE_REQUEST_FAILED', 'Stripe error misclassified');
     assert(body.request_id === response.headers.get('x-request-id'), 'request correlation missing');
     const log = JSON.stringify(logs);

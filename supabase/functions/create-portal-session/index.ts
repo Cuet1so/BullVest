@@ -1,26 +1,16 @@
-import { authenticatedAccount, billingHandler, HttpError, stripeClient, validateBillingEnvironment } from '../_shared/billing.ts';
+import { authenticatedAccount, billingHandler, HttpError, stripeClient } from '../_shared/billing.ts';
 
 Deno.serve(billingHandler(async (request, origin) => {
-  const { admin, user, profile } = await authenticatedAccount(request);
-  let customerId: string | null = profile.stripe_customer_id;
-  if (!customerId && profile.role === 'free') return { action: 'checkout_required' };
-  if (!customerId && profile.role !== 'pro') throw new HttpError(400, 'CUSTOMER_NOT_FOUND');
-  validateBillingEnvironment();
-  const stripe = stripeClient();
+  const { profile } = await authenticatedAccount(request);
+  const customerId: string | null = profile.stripe_customer_id;
   if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: user.email, metadata: { user_id: user.id },
-    }, { idempotencyKey: `bullvest-portal-customer-${user.id}` });
-    const { error } = await admin.from('profiles').update({ stripe_customer_id: customer.id })
-      .eq('id', user.id).is('stripe_customer_id', null);
-    if (error) throw error;
-    // Use the persisted winner if another request linked a customer concurrently.
-    const { data, error: readError } = await admin.from('profiles').select('stripe_customer_id')
-      .eq('id', user.id).single();
-    if (readError || !data?.stripe_customer_id) throw new HttpError(500, 'CUSTOMER_NOT_FOUND');
-    customerId = data.stripe_customer_id as string;
+    if (profile.role === 'free' && !profile.stripe_subscription_id) return { action: 'checkout_required' };
+    // A new empty customer cannot manage an existing subscription. Preserve the
+    // account state and surface the broken link instead of risking a second sale.
+    throw new HttpError(409, 'CUSTOMER_NOT_FOUND');
   }
-  // billingHandler catches errors and returns redacted JSON with CORS and request_id.
+  // The Portal requires the secret key, but not a Checkout price configuration.
+  const stripe = stripeClient();
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId, return_url: `${origin}/dashboard`,
   });
