@@ -306,7 +306,7 @@ values
 on conflict(slug) do nothing;
 
 insert into public.academy_lessons_v2(module_id,slug,title,order_index,published)
-select x.module_id,x.slug,x.title,x.order_index,x.published
+select m.id,x.slug,x.title,x.order_index,x.published
 from (values
 ('fundamentos-contables','el-balance-de-situacion-y-la-ecuacion-patrimonial','El balance de situación y la ecuación patrimonial',1,true),
 ('fundamentos-contables','la-cuenta-de-resultados-y-sus-margenes','La cuenta de resultados y sus márgenes',2,false),
