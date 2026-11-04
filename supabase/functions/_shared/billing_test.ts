@@ -40,7 +40,9 @@ Deno.test('Checkout uses dynamic payment methods and returns safe HTTP 400 for r
         if (request.method === 'POST' && url.pathname === '/v1/checkout/sessions') {
           checkoutRequests++;
           const params = new URLSearchParams(await request.text());
-          assert(![...params.keys()].some((key) => /^(allowed_payment_method_types|payment_method_types|managed_payments|automatic_payment_methods)(\[|$)/.test(key)),
+          assert(params.get('managed_payments[enabled]') === 'false',
+            'Checkout must explicitly disable Managed Payments to avoid product tax code rejection');
+          assert(![...params.keys()].some((key) => /^(allowed_payment_method_types|payment_method_types|automatic_payment_methods)(\[|$)/.test(key)),
             'Checkout must use dashboard payment methods without unsupported or conflicting options');
           assert(params.get('mode') === 'subscription', 'subscription mode changed');
           assert(params.get('line_items[0][price]') === 'price_test', 'wrong subscription price');

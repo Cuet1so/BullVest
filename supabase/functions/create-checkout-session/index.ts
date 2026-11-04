@@ -47,9 +47,11 @@ Deno.serve(billingHandler(async (request, origin) => {
   });
   if (reservationError?.message === 'CHECKOUT_ALREADY_OPEN') throw new HttpError(409, 'CHECKOUT_ALREADY_OPEN');
   if (reservationError || !requestId) throw new HttpError(500, 'BILLING_UNAVAILABLE');
-  // Omit all payment-method overrides; inherit the account's Dashboard settings.
+  // Use standard Stripe Billing even when the account defaults to Managed Payments.
+  // Managed Payments requires product tax codes and otherwise rejects Checkout.
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: 'subscription', customer: customerId, client_reference_id: user.id,
+    managed_payments: { enabled: false },
     line_items: [{ price, quantity: 1 }],
     success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/dashboard?checkout=canceled`,
