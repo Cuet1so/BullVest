@@ -88,7 +88,7 @@ async function mockAcademy(page: Page, options: { pro?: boolean; fail?: boolean;
 test('Free roadmap shows five levels, protects Pro content and offers Stripe checkout with recoverable errors', async ({ page }) => {
   const { contentRequests, browserErrors } = await mockAcademy(page);
   await page.setViewportSize({ width: 1440, height: 1100 });
-  await page.goto('/academia');
+  await page.goto('/academia/clasica');
   await expect(page.getByRole('article')).toHaveCount(5);
   await expect(page.getByText('0/15 lecciones completadas')).toBeVisible();
   await expect(page.getByText('Bloqueado', { exact: true })).toHaveCount(4);
@@ -107,7 +107,7 @@ test('Free roadmap shows five levels, protects Pro content and offers Stripe che
 
 test('lesson navigation, failed quiz, retry, completion retry and persistent progress', async ({ page }) => {
   const { control, progress, browserErrors } = await mockAcademy(page, { failCompletion: true });
-  await page.goto('/academia');
+  await page.goto('/academia/clasica');
   await page.getByRole('button', { name: 'Empezar nivel' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText('La ecuación contable', { exact: true })).toBeVisible();
@@ -140,7 +140,7 @@ test('lesson navigation, failed quiz, retry, completion retry and persistent pro
 test('Pro can read level five on mobile with no horizontal overflow', async ({ page }) => {
   const { browserErrors } = await mockAcademy(page, { pro: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/academia');
+  await page.goto('/academia/clasica');
   await expect(page.getByRole('article')).toHaveCount(5);
   await expect(page.getByText('Bloqueado', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -156,7 +156,7 @@ test('Pro can read level five on mobile with no horizontal overflow', async ({ p
 
 test('catalog load errors can be retried', async ({ page }) => {
   const { control, browserErrors } = await mockAcademy(page, { fail: true });
-  await page.goto('/academia');
+  await page.goto('/academia/clasica');
   await expect(page.getByRole('alert')).toContainText('No se pudo cargar la ruta');
   control.fail = false;
   await page.getByRole('button', { name: 'Reintentar', exact: true }).click();

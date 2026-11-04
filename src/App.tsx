@@ -12,6 +12,8 @@ import { RegisterPage } from "./features/auth/pages/RegisterPage";
 import { DashboardPage } from "./features/dashboard/pages/DashboardPage";
 import { SimulatorPage } from "./features/trading/pages/SimulatorPage";
 import { AcademyPage } from "./features/academy/pages/AcademyPage";
+import { AcademyV2Page } from "./features/academy/v2/AcademyV2Page";
+import { AcademyV2LessonPage } from "./features/academy/v2/AcademyV2LessonPage";
 import { RankingPage } from "./features/ranking/pages/RankingPage";
 
 import { CheckoutSuccessPage } from "./features/subscription/pages/CheckoutSuccessPage";
@@ -77,7 +79,9 @@ export default function App() {
             <Route path="/simulador" element={<SimulatorPage />} />
             <Route path="/simulator" element={<Navigate to="/simulador" replace />} />
 
-            <Route path="/academia" element={<AcademyPage />} />
+            <Route path="/academia" element={<AcademyV2Page />} />
+            <Route path="/academia/clasica" element={<AcademyPage />} />
+            <Route path="/academia/:moduleSlug/:lessonSlug" element={<AcademyV2LessonPage />} />
             <Route path="/academy" element={<Navigate to="/academia" replace />} />
             <Route path="/ranking" element={<RankingPage />} />
           </Route>

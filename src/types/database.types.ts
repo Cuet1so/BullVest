@@ -14,6 +14,111 @@ export type Database = {
   }
   public: {
     Tables: {
+      academy_exercise_attempts_v2: {
+        Row: {
+          created_at: string
+          exercise_id: string
+          id: string
+          is_correct: boolean
+          lesson_version: number
+          score: number
+          submitted_answer: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          exercise_id: string
+          id?: string
+          is_correct: boolean
+          lesson_version: number
+          score: number
+          submitted_answer: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          exercise_id?: string
+          id?: string
+          is_correct?: boolean
+          lesson_version?: number
+          score?: number
+          submitted_answer?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academy_exercise_attempts_v2_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "academy_exercises_v2"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academy_exercise_attempts_v2_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academy_exercise_attempts_v2_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      academy_exercises_v2: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          lesson_id: string
+          order_index: number
+          payload: Json
+          points: number
+          prompt_markdown: string
+          published: boolean
+          required: boolean
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          lesson_id: string
+          order_index: number
+          payload?: Json
+          points?: number
+          prompt_markdown: string
+          published?: boolean
+          required?: boolean
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          lesson_id?: string
+          order_index?: number
+          payload?: Json
+          points?: number
+          prompt_markdown?: string
+          published?: boolean
+          required?: boolean
+          slug?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academy_exercises_v2_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "academy_lessons_v2"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       academy_lessons: {
         Row: {
           content_json: Json
@@ -52,6 +157,59 @@ export type Database = {
           },
         ]
       }
+      academy_lessons_v2: {
+        Row: {
+          body_markdown: string
+          content_version: number
+          created_at: string
+          estimated_minutes: number
+          id: string
+          learning_objectives: string[]
+          module_id: string
+          order_index: number
+          published: boolean
+          slug: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body_markdown?: string
+          content_version?: number
+          created_at?: string
+          estimated_minutes?: number
+          id?: string
+          learning_objectives?: string[]
+          module_id: string
+          order_index: number
+          published?: boolean
+          slug: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body_markdown?: string
+          content_version?: number
+          created_at?: string
+          estimated_minutes?: number
+          id?: string
+          learning_objectives?: string[]
+          module_id?: string
+          order_index?: number
+          published?: boolean
+          slug?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academy_lessons_v2_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "academy_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       academy_levels: {
         Row: {
           book_reference: string
@@ -75,6 +233,102 @@ export type Database = {
           title?: string
         }
         Relationships: []
+      }
+      academy_modules: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          level_number: number
+          order_index: number
+          published: boolean
+          slug: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          id?: string
+          level_number: number
+          order_index: number
+          published?: boolean
+          slug: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          level_number?: number
+          order_index?: number
+          published?: boolean
+          slug?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academy_modules_level_number_fkey"
+            columns: ["level_number"]
+            isOneToOne: false
+            referencedRelation: "academy_levels"
+            referencedColumns: ["level_number"]
+          },
+        ]
+      }
+      academy_user_progress_v2: {
+        Row: {
+          best_score: number
+          completed_at: string | null
+          lesson_id: string
+          lesson_version: number
+          started_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          best_score?: number
+          completed_at?: string | null
+          lesson_id: string
+          lesson_version: number
+          started_at?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          best_score?: number
+          completed_at?: string | null
+          lesson_id?: string
+          lesson_version?: number
+          started_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academy_user_progress_v2_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "academy_lessons_v2"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academy_user_progress_v2_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academy_user_progress_v2_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_equity"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       assets: {
         Row: {
@@ -1167,6 +1421,16 @@ export type Database = {
           p_user_id: string
         }
         Returns: string
+      }
+      submit_academy_exercise_v2: {
+        Args: { p_answer: string; p_exercise_id: string }
+        Returns: {
+          correct: boolean
+          exercise_score: number
+          explanation_markdown: string
+          lesson_completed: boolean
+          lesson_score: number
+        }[]
       }
       submit_academy_quiz: {
         Args: { p_answers: number[]; p_lesson_id: string }
