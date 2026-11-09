@@ -89,6 +89,13 @@ export default {
       });
     }
 
+    if (!body || typeof body !== 'object') {
+      return Response.json({ code: 'TWELVE_DATA_INVALID_RESPONSE' }, {
+        status: 502,
+        headers,
+      });
+    }
+
     if (upstream.status === 429 || body.code === 429) {
       return Response.json({ code: 'TWELVE_DATA_RATE_LIMITED' }, {
         status: 429,
@@ -129,7 +136,7 @@ export default {
     return Response.json({
       mode: 'internal_license_probe_only',
       provider: 'Twelve Data',
-      ticker: body.meta?.symbol === 'AAPL' ? 'AAPL' : 'AAPL',
+      ticker: 'AAPL',
       interval: '1min',
       returnedBars: bars.length,
       latestBar: {
