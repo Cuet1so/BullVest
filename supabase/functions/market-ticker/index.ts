@@ -28,7 +28,7 @@ export default {
       while (true) {
         let query = ctx.supabaseAdmin.from('assets')
           .select('id, current_price, sell_price, updated_at')
-          .order('id').limit(PAGE_SIZE);
+          .eq('price_source', 'simulated').order('id').limit(PAGE_SIZE);
         if (cursor !== null) query = query.gt('id', cursor);
         const { data, error } = await query.abortSignal(AbortSignal.timeout(15_000));
         if (error) {
@@ -71,6 +71,7 @@ export default {
           price_source: 'simulated',
           quote_is_delayed: false,
         }).eq('id', asset.id)
+          .eq('price_source', 'simulated')
           .eq('updated_at', asset.updated_at)
           .eq('current_price', asset.current_price);
         update = asset.sell_price === null
