@@ -168,4 +168,64 @@ revoke all on function public.refresh_asset_prices()
   from public, anon, authenticated;
 grant execute on function public.refresh_asset_prices() to service_role;
 
+
+-- Conservative provider credit reservations: at most 8/minute and 800/UTC day.
+-- The diagnostic function is intentionally excluded; this quota guards the
+-- future licensed ingestion worker, whose writes are currently disabled.
+create table public.market_data_quota (
+  singleton_id smallint primary key default 1 check (singleton_id = 1),
+  minute_bucket timestamptz not null default date_trunc('minute', now()),
+  minute_used smallint not null default 0 check (minute_used between 0 and 8),
+  day_bucket date not null default (now() at time zone 'UTC')::date,
+  day_used integer not null default 0 check (day_used between 0 and 800),
+  updated_at timestamptz not null default now()
+);
+insert into public.market_data_quota(singleton_id) values (1) on conflict do nothing;
+alter table public.market_data_quota enable row level security;
+revoke all on public.market_data_quota from public, anon, authenticated;
+grant all on public.market_data_quota to service_role;
+
+create function public.reserve_market_data_credits(p_credits integer)
+returns boolean language plpgsql security definer set search_path = ''
+as $function$
+declare
+  v_quota public.market_data_quota%rowtype;
+  v_minute timestamptz := date_trunc('minute', now());
+  v_day date := (now() at time zone 'UTC')::date;
+  v_min_used integer;
+  v_day_used integer;
+begin
+  if p_credits is null or p_credits < 1 or p_credits > 5 then
+    return false;
+  end if;
+  if not exists (
+    select 1 from public.market_data_control
+    where singleton_id = 1 and stage <> 'simulation'
+      and storage_approved and license_reference is not null
+  ) then
+    return false;
+  end if;
+  select * into v_quota from public.market_data_quota
+  where singleton_id = 1 for update;
+  if not found then return false; end if;
+
+  v_min_used := case when v_quota.minute_bucket = v_minute
+    then v_quota.minute_used else 0 end;
+  v_day_used := case when v_quota.day_bucket = v_day
+    then v_quota.day_used else 0 end;
+  if v_min_used + p_credits > 8 or v_day_used + p_credits > 800 then
+    return false;
+  end if;
+  update public.market_data_quota set
+    minute_bucket = v_minute, minute_used = v_min_used + p_credits,
+    day_bucket = v_day, day_used = v_day_used + p_credits,
+    updated_at = now()
+  where singleton_id = 1;
+  return true;
+end;
+$function$;
+revoke all on function public.reserve_market_data_credits(integer)
+  from public, anon, authenticated;
+grant execute on function public.reserve_market_data_credits(integer) to service_role;
+
 commit;
