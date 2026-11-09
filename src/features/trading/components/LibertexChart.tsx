@@ -65,10 +65,14 @@ export default function LibertexChart({ asset, ticks, connection }: {
   return <section aria-label={`Gráfico de ${asset.ticker}`} className="mb-4 min-w-0 overflow-hidden rounded-2xl border border-slate-700/70 bg-[#121826]" data-testid="libertex-chart" data-points={points.length} data-trend={change >= 0 ? 'up' : 'down'}>
     <header className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h3 className="font-semibold text-white">{asset.ticker} <span className="text-xs font-normal text-slate-400">· {asset.name}</span></h3>
-          <p className="mt-1 text-xs" style={{ color }}>{change >= 0 ? '+' : ''}{change.toFixed(3)} % <span className="text-slate-400">desde el primer tick observado</span></p></div>
+        <div>
+          <h3 className="font-semibold text-white">{asset.ticker} <span className="text-xs font-normal text-slate-400">· {asset.name}</span></h3>
+          <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-400">Precio de compra (Ask) · {asset.price_source === 'simulated' ? 'SIMULADO' : 'FUENTE EXTERNA'}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-white" data-testid="chart-main-price">{decimal.format(asset.current_price)} <span className="text-sm font-normal text-slate-300">{asset.currency}</span></p>
+          <p className="mt-2 text-xs" style={{ color }}>{change >= 0 ? '+' : ''}{change.toFixed(3)} % <span className="text-slate-400">desde el primer tick observado</span></p>
+        </div>
         <span className={`text-[10px] ${fresh && connection === 'live' ? 'text-emerald-300' : 'text-amber-300'}`}>
-          {!fresh ? 'Cotización pendiente de actualizar' : connection === 'live' ? '● En vivo' : connection === 'fallback' ? 'Reconectando · refresco periódico' : 'Conectando…'}
+          {!fresh ? 'Cotización pendiente de actualizar' : connection === 'live' ? (asset.price_source === 'simulated' ? '● DEMO sincronizada' : '● Cotización sincronizada') : connection === 'fallback' ? 'Reconectando · refresco periódico' : 'Conectando…'}
         </span>
       </div>
       <div role="group" aria-label="Temporalidad del gráfico" className="flex gap-1 overflow-x-auto touch-pan-x">
@@ -103,6 +107,6 @@ export default function LibertexChart({ asset, ticks, connection }: {
       </ResponsiveContainer>
       {!points.length && <p className="pointer-events-none absolute inset-x-4 top-1/2 text-center text-xs text-slate-400">No hay ticks en esta ventana. Esperando cotizaciones…</p>}
     </div>
-    <p className="px-4 pb-4 text-[10px] leading-relaxed text-slate-500">Ventana {period} · Precio medio · Cotizaciones simuladas observadas en esta sesión (máximo 2.000 ticks por activo). {points.length === 1 ? 'Esperando más ticks para trazar la curva.' : 'Sin historial anterior a la apertura del simulador.'}</p>
+    <p className="px-4 pb-4 text-[10px] leading-relaxed text-slate-500">Ventana {period} · Precio medio · {asset.price_source === 'simulated' ? 'Cotizaciones DEMO generadas por el simulador' : 'Cotizaciones recibidas de una fuente externa'} observadas en esta sesión (máximo 2.000 ticks por activo). {points.length === 1 ? 'Esperando más ticks para trazar la curva.' : 'Sin historial anterior a la apertura del simulador.'}</p>
   </section>;
 }
