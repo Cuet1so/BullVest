@@ -35,5 +35,11 @@ jobs:
           npm test
           npm run test:billing
 
+      - name: Validate Market Data Source and Simulated Ticker
+        run: |
+          npx deno check --config supabase/functions/market-data-ingest/deno.json supabase/functions/market-data-ingest/index.ts
+          npx deno test --config supabase/functions/market-data-ingest/deno.json supabase/functions/market-data-ingest/provider_test.ts
+          npx deno test --allow-env --config supabase/functions/market-ticker/deno.json supabase/functions/market-ticker/index_test.ts
+
       - name: Build Production Bundle
         run: npm run build
