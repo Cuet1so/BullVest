@@ -44,6 +44,24 @@ export default {
       });
     }
 
+    let symbol = 'AAPL';
+    try {
+      const payload: unknown = await request.json();
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return Response.json({ code: 'INVALID_BODY' }, { status: 400, headers });
+      }
+      const requested = (payload as { symbol?: unknown }).symbol;
+      if (requested !== undefined) {
+        if (typeof requested !== 'string' ||
+          !['AAPL', 'TTD', 'MSFT', 'NVDA', 'TSLA'].includes(requested)) {
+          return Response.json({ code: 'SYMBOL_NOT_ALLOWED' }, { status: 400, headers });
+        }
+        symbol = requested;
+      }
+    } catch {
+      return Response.json({ code: 'INVALID_JSON' }, { status: 400, headers });
+    }
+
     const key = Deno.env.get('TWELVE_DATA_API_KEY')?.trim();
     if (!key) {
       return Response.json({ code: 'TWELVE_DATA_KEY_NOT_CONFIGURED' }, {
@@ -55,7 +73,7 @@ export default {
     // One symbol, one endpoint, one credit under the usual Twelve Data weights.
     // AAPL is already present in BullVest's catalog.
     const url = new URL('https://api.twelvedata.com/time_series');
-    url.searchParams.set('symbol', 'AAPL');
+    url.searchParams.set('symbol', symbol);
     url.searchParams.set('interval', '1min');
     url.searchParams.set('outputsize', '5');
     url.searchParams.set('timezone', 'UTC');
@@ -119,6 +137,10 @@ export default {
       });
     }
 
+    if (body.meta?.symbol && body.meta.symbol !== symbol) {
+      return Response.json({ code: 'SYMBOL_MISMATCH' }, { status: 502, headers });
+    }
+
     const bars = body.values.filter(validBar);
     if (bars.length === 0) {
       return Response.json({ code: 'TWELVE_DATA_NO_VALID_CANDLES' }, {
@@ -136,7 +158,7 @@ export default {
     return Response.json({
       mode: 'internal_license_probe_only',
       provider: 'Twelve Data',
-      ticker: 'AAPL',
+      ticker: symbol,
       interval: '1min',
       returnedBars: bars.length,
       latestBar: {
