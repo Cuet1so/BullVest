@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-const sql = readFileSync('supabase/migrations/20261109114500_market_data_foundation.sql','utf8');
+const sql = readFileSync('supabase/migrations/20261109113120_market_data_foundation.sql','utf8');
 const worker = readFileSync('supabase/functions/market-data-ingest/index.ts','utf8');
 const ticker = readFileSync('supabase/functions/market-ticker/index.ts','utf8');
 
