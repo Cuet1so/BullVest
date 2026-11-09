@@ -1,7 +1,7 @@
 # Twelve Data — Basic plan: private integration probe
 
-This function **does not** connect BullVest's production market feed. It verifies a single
-Twelve Data AAPL 1-minute OHLC request using a **server-side** API secret, without changing
+This function **does not** connect BullVest's production market feed. It verifies one whitelisted
+Twelve Data US-equity 1-minute OHLC request using a **server-side** API secret, without changing
 `public.assets`, prices, portfolio balances, or the current simulator.
 
 ## Configure (user action)
@@ -16,11 +16,14 @@ Twelve Data AAPL 1-minute OHLC request using a **server-side** API secret, witho
    the **server** `apikey` for the Supabase project (not the provider key). It uses
    `withSupabase({ auth: 'secret' })` and deploys with `verify_jwt=false`;
    its handler validates the Supabase server key itself. Do not invoke from React.
-5. A successful request returns `provider`, `ticker: AAPL`, `interval: 1min`,
+5. POST JSON `{}` probes AAPL by default. To compare The Trade Desk with Libertex,
+   POST `{ "symbol": "TTD" }`. The private whitelist also accepts `MSFT`,
+   `NVDA` and `TSLA`.
+6. A successful request returns `provider`, the selected `ticker`, `interval: 1min`,
    up to five OHLC bars, and `assetsModified: 0`.
 
-The function intentionally takes **no symbol input**, so callers cannot spend credits
-on arbitrary tickers. Each invocation consumes the endpoint's credits. No cron is
+The function only accepts **five hard-coded symbols**; calls for arbitrary tickers
+are rejected before contacting the provider. Each invocation consumes the endpoint's credits. No cron is
 installed and no automatic calls are made.
 
 ## Basic plan constraints
