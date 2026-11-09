@@ -79,7 +79,7 @@ export default {
       try {
         const response = await fetch(url, {
           headers: {
-            Authorization: \`apikey \${key}\`,
+            Authorization: 'apikey ' + key,
             Accept: 'application/json',
           },
           signal: AbortSignal.timeout(9_000),
